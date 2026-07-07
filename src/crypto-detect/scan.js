@@ -1,13 +1,6 @@
 import { WALLET_PATTERNS } from './wallet-patterns.js';
 import { KEYWORDS } from './keywords.js';
-
-const CONTEXT_RADIUS = 40;
-
-function context(text, offset, matchLength) {
-  const start = Math.max(0, offset - CONTEXT_RADIUS);
-  const end = Math.min(text.length, offset + matchLength + CONTEXT_RADIUS);
-  return text.slice(start, end);
-}
+import { context } from '../shared/text-context.js';
 
 /**
  * Scans a plain string for wallet addresses and crypto/hawala-adjacent

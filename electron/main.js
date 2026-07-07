@@ -11,6 +11,7 @@ import { deleteDataset } from '../src/db/delete-dataset.js';
 import { importArchive } from '../src/parser/index.js';
 import { runExtraction } from '../src/extract/run-extraction.js';
 import { runScan } from '../src/crypto-detect/run-scan.js';
+import { runSearch } from '../src/search/run-search.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -75,6 +76,8 @@ function registerIpcHandlers() {
   ipcMain.handle('run-extraction', (_event, datasetIds) => runExtraction(db, { datasetIds }));
 
   ipcMain.handle('run-scan', (_event, datasetIds) => runScan(db, { datasetIds }));
+
+  ipcMain.handle('run-search', (_event, { datasetIds, query }) => runSearch(db, { datasetIds, query }));
 
   ipcMain.handle('export-attachment', async (_event, attachmentId) => {
     const row = db.prepare('SELECT filename, savedPath FROM attachments WHERE id = ?').get(attachmentId);

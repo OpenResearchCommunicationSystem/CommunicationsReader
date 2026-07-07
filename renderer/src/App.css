@@ -68,6 +68,52 @@ body {
   opacity: 0.8;
 }
 
+.search-panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-alt);
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-family: inherit;
+}
+
+.search-button, .search-clear-button {
+  font-size: 13px;
+  padding: 5px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: white;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.search-error {
+  font-size: 12px;
+  color: var(--danger-text);
+  flex-shrink: 0;
+}
+
+.search-result-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.message-row.search-dimmed {
+  opacity: 0.4;
+}
+
 .app-body {
   flex: 1;
   display: grid;

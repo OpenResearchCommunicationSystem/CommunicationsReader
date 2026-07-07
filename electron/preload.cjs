@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('api', {
   importArchive: () => ipcRenderer.invoke('import-archive'),
   runExtraction: (datasetIds) => ipcRenderer.invoke('run-extraction', datasetIds),
   runScan: (datasetIds) => ipcRenderer.invoke('run-scan', datasetIds),
+  runSearch: (options) => ipcRenderer.invoke('run-search', options),
   exportAttachment: (attachmentId) => ipcRenderer.invoke('export-attachment', attachmentId),
   deleteDataset: (datasetId) => ipcRenderer.invoke('delete-dataset', datasetId),
 });

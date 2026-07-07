@@ -3,6 +3,7 @@ import DatasetPanel from './components/DatasetPanel.jsx';
 import ThreadList from './components/ThreadList.jsx';
 import MessageList from './components/MessageList.jsx';
 import ReadingPane from './components/ReadingPane.jsx';
+import SearchPanel from './components/SearchPanel.jsx';
 import * as api from './api.js';
 
 export default function App() {
@@ -14,6 +15,9 @@ export default function App() {
   const [communication, setCommunication] = useState(null);
   const [cryptoMatches, setCryptoMatches] = useState([]);
   const [error, setError] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState(null);
+  const [searchError, setSearchError] = useState(null);
 
   useEffect(() => {
     api.listDatasets().then(setDatasets).catch((err) => setError(err.message));
@@ -25,6 +29,12 @@ export default function App() {
     setSelectedThreadId(null);
     setSelectedCommunicationId(null);
     setCommunication(null);
+    // A search result set is scoped to whatever datasets it was run
+    // against -- changing the dataset selection invalidates it rather
+    // than leaving a stale/mis-scoped filter applied.
+    setSearchQuery('');
+    setSearchResults(null);
+    setSearchError(null);
   }, [selectedDatasetIds]);
 
   useEffect(() => {
@@ -39,6 +49,22 @@ export default function App() {
     () => threads.find((t) => t.threadId === selectedThreadId) || null,
     [threads, selectedThreadId]
   );
+
+  // null means "no active search" (show everything, unfiltered).
+  const matchedCommunicationIds = useMemo(
+    () => (searchResults ? new Set(searchResults.map((r) => r.communicationId)) : null),
+    [searchResults]
+  );
+
+  // Narrow the thread list to threads containing at least one matching
+  // message. The message list within an opened thread is NOT filtered
+  // the same way -- see MessageList's matchedIds prop below -- since
+  // hiding the non-matching messages around a hit would remove useful
+  // conversational context for an investigator.
+  const visibleThreads = useMemo(() => {
+    if (!matchedCommunicationIds) return threads;
+    return threads.filter((t) => t.members.some((m) => matchedCommunicationIds.has(m.communicationId)));
+  }, [threads, matchedCommunicationIds]);
 
   function toggleDataset(id) {
     setSelectedDatasetIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -84,6 +110,28 @@ export default function App() {
     }
   }
 
+  async function handleSearch(query) {
+    setSearchQuery(query);
+    if (!query || !query.trim()) {
+      setSearchResults(null);
+      setSearchError(null);
+      return;
+    }
+    try {
+      const result = await api.runSearch({ datasetIds: selectedDatasetIds, query });
+      if (result.error) {
+        setSearchError(result.error);
+        setSearchResults(null);
+      } else {
+        setSearchError(null);
+        setSearchResults(result.results);
+      }
+    } catch (err) {
+      setSearchError(err.message);
+      setSearchResults(null);
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="app-titlebar">
@@ -95,6 +143,12 @@ export default function App() {
           {error} <span className="dismiss">(click to dismiss)</span>
         </div>
       )}
+      <SearchPanel
+        onSearch={handleSearch}
+        resultCount={searchResults ? searchResults.length : 0}
+        error={searchError}
+        hasActiveQuery={Boolean(searchQuery && searchQuery.trim())}
+      />
       <div className="app-body">
         <DatasetPanel
           datasets={datasets}
@@ -104,8 +158,13 @@ export default function App() {
           onImportClick={handleImportClick}
           onDelete={handleDeleteDataset}
         />
-        <ThreadList threads={threads} selectedThreadId={selectedThreadId} onSelect={selectThread} />
-        <MessageList thread={selectedThread} selectedCommunicationId={selectedCommunicationId} onSelect={setSelectedCommunicationId} />
+        <ThreadList threads={visibleThreads} selectedThreadId={selectedThreadId} onSelect={selectThread} />
+        <MessageList
+          thread={selectedThread}
+          selectedCommunicationId={selectedCommunicationId}
+          onSelect={setSelectedCommunicationId}
+          matchedIds={matchedCommunicationIds}
+        />
         <ReadingPane communication={communication} cryptoMatches={cryptoMatches} onExportAttachment={handleExportAttachment} />
       </div>
     </div>

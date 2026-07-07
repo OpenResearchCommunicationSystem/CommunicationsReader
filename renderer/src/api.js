@@ -6,7 +6,7 @@
 // hygiene). When running standalone in a browser (`npm run dev:renderer`
 // with no Electron), window.api is undefined and these fall back to
 // mock data so the UI can be built/previewed without the full app.
-import { mockDatasets, mockThreads, mockGetCommunication, mockCryptoMatches } from './mockData.js';
+import { mockDatasets, mockThreads, mockGetCommunication, mockCryptoMatches, mockRunSearch } from './mockData.js';
 
 const hasRealApi = typeof window !== 'undefined' && window.api;
 
@@ -43,6 +43,11 @@ export async function runExtraction(datasetIds) {
 export async function runScan(datasetIds) {
   if (hasRealApi) return window.api.runScan(datasetIds);
   throw new Error('runScan is only available inside the Electron app');
+}
+
+export async function runSearch(options) {
+  if (hasRealApi) return window.api.runSearch(options);
+  return mockRunSearch(options);
 }
 
 export async function exportAttachment(attachmentId) {

@@ -3,7 +3,7 @@ function formatDateTime(ts) {
   return new Date(ts).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-export default function MessageList({ thread, selectedCommunicationId, onSelect }) {
+export default function MessageList({ thread, selectedCommunicationId, onSelect, matchedIds }) {
   if (!thread) {
     return (
       <div className="message-list">
@@ -21,17 +21,20 @@ export default function MessageList({ thread, selectedCommunicationId, onSelect 
         <h2>{thread.subject || '(no subject)'}</h2>
       </div>
       <ul>
-        {thread.members.map((member) => (
-          <li key={member.communicationId}>
-            <button
-              className={`message-row ${member.communicationId === selectedCommunicationId ? 'selected' : ''}`}
-              onClick={() => onSelect(member.communicationId)}
-            >
-              <div className="message-date">{formatDateTime(member.timestamp)}</div>
-              <div className="message-subject">{member.subject}</div>
-            </button>
-          </li>
-        ))}
+        {thread.members.map((member) => {
+          const isDimmed = matchedIds != null && !matchedIds.has(member.communicationId);
+          return (
+            <li key={member.communicationId}>
+              <button
+                className={`message-row ${member.communicationId === selectedCommunicationId ? 'selected' : ''} ${isDimmed ? 'search-dimmed' : ''}`}
+                onClick={() => onSelect(member.communicationId)}
+              >
+                <div className="message-date">{formatDateTime(member.timestamp)}</div>
+                <div className="message-subject">{member.subject}</div>
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

@@ -3,6 +3,8 @@
 // (no window.api / Electron preload present). Lets the UI be previewed
 // and iterated on visually before wiring real IPC. Modeled on the actual
 // structure/content seen from real test datasets during Milestones 1-4.
+import { parseQuery, SearchSyntaxError } from '../../src/search/query-parser.js';
+import { evaluateQuery } from '../../src/search/evaluate.js';
 
 export const mockDatasets = [
   { id: 1, label: 'dataset_4', sourceType: 'email-eml', importedAt: Date.now() - 86400000, succeededCount: 8, failedCount: 0, totalCount: 8 },
@@ -118,3 +120,29 @@ export function mockGetCommunication(id) {
 export const mockCryptoMatches = [
   { id: 1, communicationId: 7, attachmentId: null, matchType: 'keyword', patternName: 'keyword_fa_exchange_house', matchedText: 'صرافی', sourceField: 'bodyText' },
 ];
+
+/**
+ * Runs the real search engine (src/search/query-parser.js + evaluate.js
+ * -- pure JS, no Node-only deps) against mockCommunications, so preview
+ * mode exercises the exact same regex/NEAR/boolean-query behavior as the
+ * real Electron IPC path, just over a small fixed dataset. datasetIds is
+ * ignored here, consistent with the other mock*() functions in this file.
+ */
+export function mockRunSearch({ query } = {}) {
+  if (!query || !query.trim()) return { resultCount: 0, results: [] };
+
+  let ast;
+  try {
+    ast = parseQuery(query);
+  } catch (err) {
+    if (err instanceof SearchSyntaxError) return { resultCount: 0, results: [], error: err.message };
+    throw err;
+  }
+
+  const results = [];
+  for (const communication of Object.values(mockCommunications)) {
+    const evaluated = evaluateQuery(ast, communication);
+    if (evaluated) results.push({ communicationId: communication.id, hits: evaluated.hits });
+  }
+  return { resultCount: results.length, results };
+}
