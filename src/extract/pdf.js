@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import './pdfjs-polyfills.js';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 // A page counts as "has a real text layer" if it has at least this many

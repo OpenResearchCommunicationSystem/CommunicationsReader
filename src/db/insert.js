@@ -32,10 +32,10 @@ function getStatements(db) {
     insertDataset: db.prepare(`
       INSERT INTO datasets (
         sourceType, label, originalPath, importedAt, containerType,
-        succeededCount, failedCount, totalCount, note, importerVersion
+        succeededCount, failedCount, totalCount, note, importerVersion, attachmentsDir
       ) VALUES (
         @sourceType, @label, @originalPath, @importedAt, @containerType,
-        @succeededCount, @failedCount, @totalCount, @note, @importerVersion
+        @succeededCount, @failedCount, @totalCount, @note, @importerVersion, @attachmentsDir
       )
     `),
     insertCommunication: db.prepare(`
@@ -85,6 +85,7 @@ export function insertDataset(db, meta) {
     totalCount: meta.totalCount ?? 0,
     note: meta.note ?? null,
     importerVersion: meta.importerVersion ?? null,
+    attachmentsDir: meta.attachmentsDir ?? null,
   });
   return Number(res.lastInsertRowid);
 }
@@ -128,7 +129,7 @@ function insertAttachments(db, communicationId, attachments) {
  * continues, mirroring importArchive()'s own defensive per-message
  * handling.
  *
- * meta: { sourceType, originalPath, label?, importerVersion? }
+ * meta: { sourceType, originalPath, label?, importerVersion?, attachmentsDir? }
  *
  * Returns { datasetId, insertedCount, insertFailures }.
  */
@@ -143,6 +144,7 @@ export function insertImportResult(db, importResult, meta) {
     totalCount: importResult.summary.total,
     note: importResult.note,
     importerVersion: meta.importerVersion,
+    attachmentsDir: meta.attachmentsDir,
   });
 
   const insertFailures = [];

@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS datasets (
   failedCount       INTEGER NOT NULL DEFAULT 0,
   totalCount        INTEGER NOT NULL DEFAULT 0,
   note              TEXT,
-  importerVersion   TEXT
+  importerVersion   TEXT,
+  attachmentsDir    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS communications (

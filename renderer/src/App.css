@@ -146,6 +146,35 @@ body {
   background: var(--bg-selected);
 }
 
+.dataset-list-item {
+  display: flex;
+  align-items: center;
+}
+
+.dataset-list-item .dataset-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.delete-dataset-button {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  margin-right: 8px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.delete-dataset-button:hover {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
 .dataset-name {
   flex: 1;
   overflow: hidden;
@@ -305,12 +334,15 @@ body {
   padding: 0;
 }
 
+.attachment-item {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
 .attachment-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
 }
 
 .attachment-name {
@@ -353,4 +385,22 @@ body {
   border: 1px solid var(--border);
   background: white;
   cursor: pointer;
+}
+
+.attachment-extracted-text {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--bg-alt);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  font-size: 13.5px;
+  line-height: 1.5;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.attachment-extraction-error {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--danger-text);
 }

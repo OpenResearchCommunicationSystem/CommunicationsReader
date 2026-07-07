@@ -24,21 +24,33 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // directory doesn't exist next to it -- electron/main.js sets
 // TESSDATA_CACHE_DIR to somewhere under app.getPath('userData') before
 // any extraction runs.
-const MERGED_LANG_DIR = process.env.TESSDATA_CACHE_DIR || path.join(here, '..', '..', '.tessdata-cache');
+//
+// Deliberately NOT resolved at module load time: main.js statically
+// imports this module (transitively, via run-extraction.js) at the top
+// of the file, which runs before app.whenReady() has a chance to set
+// TESSDATA_CACHE_DIR -- a module-level `const` here would permanently
+// lock in the wrong fallback path. Resolving it lazily, inside the
+// function that's only ever called after the app (and therefore
+// TESSDATA_CACHE_DIR) is ready, avoids that trap.
+function getMergedLangDir() {
+  return process.env.TESSDATA_CACHE_DIR || path.join(here, '..', '..', '.tessdata-cache');
+}
+
 const LANGS = ['eng', 'fas'];
 const OEM_LSTM_ONLY = 1;
 
 function ensureMergedLangPath() {
-  fs.mkdirSync(MERGED_LANG_DIR, { recursive: true });
+  const mergedLangDir = getMergedLangDir();
+  fs.mkdirSync(mergedLangDir, { recursive: true });
   for (const lang of LANGS) {
     const { langPath } = require(`@tesseract.js-data/${lang}`);
     const src = path.join(langPath, `${lang}.traineddata.gz`);
-    const dest = path.join(MERGED_LANG_DIR, `${lang}.traineddata.gz`);
+    const dest = path.join(mergedLangDir, `${lang}.traineddata.gz`);
     if (!fs.existsSync(dest)) {
       fs.copyFileSync(src, dest);
     }
   }
-  return MERGED_LANG_DIR;
+  return mergedLangDir;
 }
 
 let workerPromise = null;
@@ -48,7 +60,7 @@ function getWorker() {
     const langPath = ensureMergedLangPath();
     workerPromise = createWorker(LANGS, OEM_LSTM_ONLY, {
       langPath,
-      cachePath: MERGED_LANG_DIR,
+      cachePath: langPath,
       gzip: true,
     });
   }

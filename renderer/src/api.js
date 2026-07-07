@@ -50,4 +50,9 @@ export async function exportAttachment(attachmentId) {
   throw new Error('exportAttachment is only available inside the Electron app');
 }
 
+export async function deleteDataset(datasetId) {
+  if (hasRealApi) return window.api.deleteDataset(datasetId);
+  throw new Error('deleteDataset is only available inside the Electron app');
+}
+
 export const isElectron = hasRealApi;

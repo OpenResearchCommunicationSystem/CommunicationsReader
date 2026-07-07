@@ -72,6 +72,18 @@ export default function App() {
     }
   }
 
+  async function handleDeleteDataset(datasetId) {
+    try {
+      const result = await api.deleteDataset(datasetId);
+      if (result?.deleted) {
+        setSelectedDatasetIds((prev) => prev.filter((id) => id !== datasetId));
+        api.listDatasets().then(setDatasets);
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="app-titlebar">
@@ -90,6 +102,7 @@ export default function App() {
           onToggle={toggleDataset}
           onSelectAll={selectAllDatasets}
           onImportClick={handleImportClick}
+          onDelete={handleDeleteDataset}
         />
         <ThreadList threads={threads} selectedThreadId={selectedThreadId} onSelect={selectThread} />
         <MessageList thread={selectedThread} selectedCommunicationId={selectedCommunicationId} onSelect={setSelectedCommunicationId} />

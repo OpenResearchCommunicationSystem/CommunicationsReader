@@ -7,6 +7,7 @@ import { openDatabase } from '../src/db/schema.js';
 import { insertImportResult } from '../src/db/insert.js';
 import { listDatasets, listCommunications, getCommunication as dbGetCommunication, getCryptoMatches } from '../src/db/query.js';
 import { getThreadsForDatasets } from '../src/db/thread-query.js';
+import { deleteDataset } from '../src/db/delete-dataset.js';
 import { importArchive } from '../src/parser/index.js';
 import { runExtraction } from '../src/extract/run-extraction.js';
 import { runScan } from '../src/crypto-detect/run-scan.js';
@@ -50,7 +51,12 @@ function registerIpcHandlers() {
 
     const importResult = await importArchive({ zipPath, outputAttachmentsDir });
     const sourceType = importResult.containerType === 'mbox' ? 'email-mbox' : 'email-eml';
-    const inserted = insertImportResult(db, importResult, { sourceType, originalPath: zipPath, label });
+    const inserted = insertImportResult(db, importResult, {
+      sourceType,
+      originalPath: zipPath,
+      label,
+      attachmentsDir: outputAttachmentsDir,
+    });
 
     // Extraction and crypto scanning run immediately after import so the
     // investigator doesn't need a separate step -- both are re-runnable
@@ -84,6 +90,25 @@ function registerIpcHandlers() {
 
     await fs.copyFile(row.savedPath, result.filePath);
     return result.filePath;
+  });
+
+  ipcMain.handle('delete-dataset', async (event, datasetId) => {
+    const dataset = db.prepare('SELECT label, originalPath FROM datasets WHERE id = ?').get(datasetId);
+    if (!dataset) return { deleted: false };
+
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const confirmation = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['Cancel', 'Delete'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Delete dataset',
+      message: `Delete "${dataset.label || dataset.originalPath}"?`,
+      detail: 'This removes every message, attachment, and flagged term imported from this dataset. This cannot be undone.',
+    });
+    if (confirmation.response !== 1) return { deleted: false, cancelled: true };
+
+    return deleteDataset(db, datasetId);
   });
 }
 

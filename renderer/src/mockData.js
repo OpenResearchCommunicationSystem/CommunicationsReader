@@ -56,7 +56,15 @@ const mockCommunications = {
       'زهرا خانم با سلام\nگواهی بازرسی SGS برای پمپ‌های KSB صادر شد:\n- شماره گواهی: SGS-IR-2021-04521\n- تاریخ بازرسی: ۲۸ اسفند ۱۳۹۹\n- نتیجه: تأیید — مطابق با مشخصات فنی سفارش\n\nگواهی اصلی به پیوست ارسال می‌شود',
     bodyEmpty: false,
     attachments: [
-      { id: 1, filename: 'SGS_Inspection_Certificate_Alborz_Industrial.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 9616, extractionStatus: 'attempted_succeeded' },
+      {
+        id: 1,
+        filename: 'SGS_Inspection_Certificate_Alborz_Industrial.docx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        size: 9616,
+        extractionStatus: 'attempted_succeeded',
+        extractedText:
+          'SGS INSPECTION CERTIFICATE\nCertificate No: SGS-IR-2021-04521\nClient: Alborz Industrial Group\nInspection Date: 2021-03-19\nScope: KSB pump units — hydrostatic test, dimensional check, material certs\nResult: PASS — conforms to purchase order technical specification',
+      },
     ],
   },
   2: {
@@ -81,8 +89,24 @@ const mockCommunications = {
     bodyText: 'با سلام به دستور آقای بهرامی، قرارداد اجاره سفری ... به پیوست ارسال می‌گردد.',
     bodyEmpty: false,
     attachments: [
-      { id: 2, filename: 'VCP-KVMR-2021-001-charter-party.jpg', mimeType: 'image/jpeg', size: 23947, extractionStatus: 'attempted_succeeded' },
-      { id: 3, filename: 'MV_Golestan_Charter_Details.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 7544, extractionStatus: 'attempted_succeeded' },
+      {
+        id: 2,
+        filename: 'VCP-KVMR-2021-001-charter-party.jpg',
+        mimeType: 'image/jpeg',
+        size: 23947,
+        extractionStatus: 'attempted_succeeded',
+        extractedText:
+          'VOYAGE CHARTER PARTY\nNo: VCP-KVMR-2021-001\nOwners: Kaveh Maritime\nCharterers: Sepehr Naft Tejarat\nVessel: MV Golestan\nCargo: Crude oil, approx. 70,000 MT\nLoad port: Bandar Abbas   Discharge port: Fujairah',
+      },
+      {
+        id: 3,
+        filename: 'MV_Golestan_Charter_Details.xlsx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        size: 7544,
+        extractionStatus: 'attempted_succeeded',
+        extractedText:
+          'Sheet: Charter Summary\nVessel | MV Golestan\nDWT | 74,200\nLaycan | 2021-03-22 / 2021-03-25\nFreight Rate | USD 2.85/bbl\nDemurrage | USD 18,000/day',
+      },
     ],
   },
 };

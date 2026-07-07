@@ -12,4 +12,5 @@ contextBridge.exposeInMainWorld('api', {
   runExtraction: (datasetIds) => ipcRenderer.invoke('run-extraction', datasetIds),
   runScan: (datasetIds) => ipcRenderer.invoke('run-scan', datasetIds),
   exportAttachment: (attachmentId) => ipcRenderer.invoke('export-attachment', attachmentId),
+  deleteDataset: (datasetId) => ipcRenderer.invoke('delete-dataset', datasetId),
 });

@@ -60,13 +60,23 @@ export default function ReadingPane({ communication, cryptoMatches, onExportAtta
           <h3>Attachments ({communication.attachments.length})</h3>
           <ul className="attachments-list">
             {communication.attachments.map((att) => (
-              <li key={att.id} className="attachment-row">
-                <span className="attachment-name">{att.filename}</span>
-                <span className="attachment-size">{formatBytes(att.size)}</span>
-                <span className={`extraction-badge extraction-${att.extractionStatus}`}>
-                  {EXTRACTION_LABELS[att.extractionStatus] || att.extractionStatus}
-                </span>
-                <button className="export-button" onClick={() => onExportAttachment(att.id)}>Export&hellip;</button>
+              <li key={att.id} className="attachment-item">
+                <div className="attachment-row">
+                  <span className="attachment-name">{att.filename}</span>
+                  <span className="attachment-size">{formatBytes(att.size)}</span>
+                  <span className={`extraction-badge extraction-${att.extractionStatus}`}>
+                    {EXTRACTION_LABELS[att.extractionStatus] || att.extractionStatus}
+                  </span>
+                  <button className="export-button" onClick={() => onExportAttachment(att.id)}>Export&hellip;</button>
+                </div>
+                {att.extractionStatus === 'attempted_succeeded' && (
+                  <div className="attachment-extracted-text" dir="auto">
+                    {att.extractedText ? att.extractedText : <em>(no text found)</em>}
+                  </div>
+                )}
+                {att.extractionStatus === 'attempted_failed' && (
+                  <div className="attachment-extraction-error">Extraction failed: {att.extractionError}</div>
+                )}
               </li>
             ))}
           </ul>
