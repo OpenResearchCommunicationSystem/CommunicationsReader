@@ -81,16 +81,59 @@ CREATE TABLE IF NOT EXISTS participants (
 CREATE INDEX IF NOT EXISTS idx_participants_communication ON participants(communicationId);
 CREATE INDEX IF NOT EXISTS idx_participants_identifier    ON participants(identifier);
 
+-- extractionStatus is one of: 'not_attempted' (unsupported type, e.g.
+-- legacy .doc/video -- also the pre-pipeline default), 'attempted_failed',
+-- or 'attempted_succeeded'. extractedText is NULL for the first two and a
+-- string (possibly '') for the third -- an empty string distinguishes
+-- "succeeded, genuinely no text found" (e.g. a blank scanned page) from
+-- "never attempted"/"failed". extractionMeta is a JSON catch-all for
+-- format-specific detail (OCR confidence, PDF page counts, etc.) that
+-- doesn't earn its own column, mirroring communications.sourceSpecific.
+-- NOTE: 'not_attempted' is both the pre-pipeline default AND the
+-- terminal state for unsupported types, so "has the pipeline run on this
+-- row yet" must be determined from extractedAt IS NULL, never from
+-- extractionStatus alone (see src/extract/run-extraction.js).
 CREATE TABLE IF NOT EXISTS attachments (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   communicationId   INTEGER NOT NULL REFERENCES communications(id) ON DELETE CASCADE,
   filename          TEXT,
   size              INTEGER,
   mimeType          TEXT,
-  savedPath         TEXT
+  savedPath         TEXT,
+
+  extractionStatus  TEXT NOT NULL DEFAULT 'not_attempted',
+  extractionMethod  TEXT,
+  extractedText     TEXT,
+  extractionError   TEXT,
+  extractionMeta    TEXT,
+  extractedAt       INTEGER
 );
 
-CREATE INDEX IF NOT EXISTS idx_attachments_communication ON attachments(communicationId);
+CREATE INDEX IF NOT EXISTS idx_attachments_communication    ON attachments(communicationId);
+CREATE INDEX IF NOT EXISTS idx_attachments_extractionstatus ON attachments(extractionStatus);
+
+-- One row per detected wallet-address or keyword hit. Exactly one of
+-- communicationId/attachmentId is set per row (a match either came from a
+-- communication's bodyText directly, or from an attachment's
+-- extractedText). Derived/recomputable data, not raw imported evidence --
+-- unlike communications, rows here CAN be deleted and re-inserted when a
+-- rescan is requested (see src/crypto-detect/scan.js).
+CREATE TABLE IF NOT EXISTS crypto_matches (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  communicationId   INTEGER REFERENCES communications(id) ON DELETE CASCADE,
+  attachmentId      INTEGER REFERENCES attachments(id) ON DELETE CASCADE,
+  sourceField       TEXT NOT NULL,
+  matchType         TEXT NOT NULL,
+  matchedText       TEXT NOT NULL,
+  patternName       TEXT NOT NULL,
+  offset            INTEGER,
+  context           TEXT,
+  createdAt         INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_crypto_matches_communication ON crypto_matches(communicationId);
+CREATE INDEX IF NOT EXISTS idx_crypto_matches_attachment    ON crypto_matches(attachmentId);
+CREATE INDEX IF NOT EXISTS idx_crypto_matches_type          ON crypto_matches(matchType);
 `;
 
 /**

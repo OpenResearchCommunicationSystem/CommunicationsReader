@@ -105,3 +105,40 @@ export function getDedupGroups(db, options = {}) {
     members: memberStmt.all(g.hash),
   }));
 }
+
+/**
+ * Lists crypto/keyword matches, optionally scoped to a set of dataset
+ * ids. A match's dataset is resolved via its communication (bodyText
+ * matches) or via its attachment's parent communication (extractedText
+ * matches).
+ *
+ * options: { datasetIds?: number[], matchType?: string }
+ */
+export function getCryptoMatches(db, options = {}) {
+  const { datasetIds, matchType } = options;
+
+  let sql = `
+    SELECT cm.*, COALESCE(c.datasetId, ac.datasetId) AS datasetId
+    FROM crypto_matches cm
+    LEFT JOIN communications c ON c.id = cm.communicationId
+    LEFT JOIN attachments a ON a.id = cm.attachmentId
+    LEFT JOIN communications ac ON ac.id = a.communicationId
+  `;
+  const conditions = [];
+  const params = [];
+
+  if (Array.isArray(datasetIds) && datasetIds.length > 0) {
+    const placeholders = datasetIds.map(() => '?').join(', ');
+    conditions.push(`COALESCE(c.datasetId, ac.datasetId) IN (${placeholders})`);
+    params.push(...datasetIds);
+  }
+  if (matchType) {
+    conditions.push('cm.matchType = ?');
+    params.push(matchType);
+  }
+  if (conditions.length > 0) {
+    sql += ' WHERE ' + conditions.join(' AND ');
+  }
+
+  return db.prepare(sql).all(...params);
+}

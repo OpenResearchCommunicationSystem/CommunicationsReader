@@ -13,6 +13,7 @@ test('schema creates all expected tables and indexes', () => {
   assert.ok(tables.includes('communications'));
   assert.ok(tables.includes('participants'));
   assert.ok(tables.includes('attachments'));
+  assert.ok(tables.includes('crypto_matches'));
 
   const indexes = db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name")
@@ -28,9 +29,31 @@ test('schema creates all expected tables and indexes', () => {
     'idx_participants_communication',
     'idx_participants_identifier',
     'idx_attachments_communication',
+    'idx_attachments_extractionstatus',
+    'idx_crypto_matches_communication',
+    'idx_crypto_matches_attachment',
+    'idx_crypto_matches_type',
   ]) {
     assert.ok(indexes.includes(idx), `expected index ${idx} to exist`);
   }
+
+  db.close();
+});
+
+test('attachments table has the extraction-result columns with correct defaults', () => {
+  const db = openDatabase(':memory:');
+  const columns = db.prepare('PRAGMA table_info(attachments)').all().map((c) => c.name);
+  for (const col of ['extractionStatus', 'extractionMethod', 'extractedText', 'extractionError', 'extractionMeta', 'extractedAt']) {
+    assert.ok(columns.includes(col), `expected attachments.${col} to exist`);
+  }
+
+  db.exec(`INSERT INTO datasets (sourceType, originalPath, importedAt) VALUES ('email-eml', 'x.zip', 0)`);
+  db.exec(`INSERT INTO communications (datasetId, sourceType, rawHash, normalizedHash, createdAt) VALUES (1, 'email', 'a', 'b', 0)`);
+  db.exec(`INSERT INTO attachments (communicationId, filename) VALUES (1, 'test.bin')`);
+  const row = db.prepare('SELECT * FROM attachments WHERE id = 1').get();
+  assert.equal(row.extractionStatus, 'not_attempted');
+  assert.equal(row.extractedText, null);
+  assert.equal(row.extractedAt, null);
 
   db.close();
 });
