@@ -3,3 +3,5 @@ test/fixtures/generated/
 *.log
 .claude/
 .tessdata-cache/
+dist/
+release/

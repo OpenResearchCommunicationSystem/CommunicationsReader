@@ -17,7 +17,14 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // require()'d directly from the installed tesseract.js-core package
 // (corePath is a browser-only concern), and the CDN fallback in its
 // language loader only triggers when langPath is left unset.
-const MERGED_LANG_DIR = path.join(here, '..', '..', '.tessdata-cache');
+//
+// Defaults to a path next to this module, which is fine when running
+// from source (dev, tests, the CLI). Once packaged into an Electron app,
+// this file ships inside a read-only asar archive, so a real writable
+// directory doesn't exist next to it -- electron/main.js sets
+// TESSDATA_CACHE_DIR to somewhere under app.getPath('userData') before
+// any extraction runs.
+const MERGED_LANG_DIR = process.env.TESSDATA_CACHE_DIR || path.join(here, '..', '..', '.tessdata-cache');
 const LANGS = ['eng', 'fas'];
 const OEM_LSTM_ONLY = 1;
 
