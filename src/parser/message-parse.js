@@ -12,6 +12,20 @@ function addressToString(addressObject) {
   return null;
 }
 
+// Structured {name, address} pairs, preserved alongside the flattened
+// display string above so downstream consumers (e.g. the DB layer's
+// participant rows) never need to re-parse "Name <addr>, Name2 <addr2>"
+// out of a joined string -- splitting on commas is ambiguous once display
+// names can themselves contain commas.
+function addressToList(addressObject) {
+  if (!addressObject) return [];
+  if (typeof addressObject === 'string') return [{ name: null, address: addressObject }];
+  if (Array.isArray(addressObject.value)) {
+    return addressObject.value.map((v) => ({ name: v.name || null, address: v.address || null }));
+  }
+  return [];
+}
+
 function toReferencesArray(references) {
   if (!references) return [];
   if (Array.isArray(references)) return references;
@@ -111,6 +125,9 @@ export async function parseMessage(rawBytes, sourceInfo, options = {}) {
     from: addressToString(parsed.from),
     to: addressToString(parsed.to),
     cc: addressToString(parsed.cc),
+    fromList: addressToList(parsed.from),
+    toList: addressToList(parsed.to),
+    ccList: addressToList(parsed.cc),
     subject: parsed.subject || null,
     date: parsed.date ? parsed.date.getTime() : null,
     messageId: parsed.messageId || null,
