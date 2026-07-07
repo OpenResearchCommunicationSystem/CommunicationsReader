@@ -92,7 +92,9 @@ const MAGIC_SIGNATURES = [
   { format: 'tiff-be', bytes: [0x4d, 0x4d, 0x00, 0x2a] },
 ];
 
-function looksLikeSupportedImage(buf) {
+// Exported for src/extract/magic-bytes.js, which generalizes this same
+// sniff-before-trusting-the-claimed-type pattern to docx/xlsx/pptx/pdf.
+export function looksLikeSupportedImage(buf) {
   if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') {
     return true;
   }

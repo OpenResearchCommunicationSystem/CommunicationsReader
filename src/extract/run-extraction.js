@@ -25,7 +25,11 @@ export async function runExtraction(db, options = {}) {
     JOIN communications c ON c.id = a.communicationId
   `;
   const params = [];
-  const conditions = [];
+  // A previously rejected attachment (claimed-vs-actual content mismatch,
+  // or a size/complexity limit exceeded) is never retried, even under
+  // force: true -- it's been confirmed unsafe to hand to an extractor,
+  // not merely "not attempted yet".
+  const conditions = [`a.quarantineStatus != 'rejected'`];
 
   if (!force) {
     // extractedAt (not extractionStatus) is the "have we run the pipeline

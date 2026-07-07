@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { runMigrations } from './migrate.js';
 
 // SQLite is source-agnostic on purpose: email is the only producer today,
 // but SMS/chat-app/UFDR/Penlink parsers are expected later. `datasets` is
@@ -94,6 +95,19 @@ CREATE INDEX IF NOT EXISTS idx_participants_identifier    ON participants(identi
 -- terminal state for unsupported types, so "has the pipeline run on this
 -- row yet" must be determined from extractedAt IS NULL, never from
 -- extractionStatus alone (see src/extract/run-extraction.js).
+--
+-- quarantineStatus is a SEPARATE lifecycle from extractionStatus: it
+-- describes whether the raw bytes were ever verified safe to hand to an
+-- extractor, not whether text extraction itself succeeded. One of:
+-- 'pending' (default, not yet verified -- also the permanent state for
+-- unsupported types, which are never verified since nothing ever
+-- extracts them), 'verified' (magic-byte + structural checks passed --
+-- an extractor was invoked, regardless of whether extraction itself then
+-- succeeded or failed), 'rejected' (claimed-vs-actual content mismatch or
+-- a size/complexity limit was exceeded -- extractionStatus stays
+-- 'not_attempted' for these, an extractor is never invoked), or 'error'
+-- (the verification step itself couldn't run, e.g. the file was
+-- unreadable). See src/extract/magic-bytes.js and src/extract/limits.js.
 CREATE TABLE IF NOT EXISTS attachments (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   communicationId   INTEGER NOT NULL REFERENCES communications(id) ON DELETE CASCADE,
@@ -102,16 +116,23 @@ CREATE TABLE IF NOT EXISTS attachments (
   mimeType          TEXT,
   savedPath         TEXT,
 
+  contentHash       TEXT,
+
   extractionStatus  TEXT NOT NULL DEFAULT 'not_attempted',
   extractionMethod  TEXT,
   extractedText     TEXT,
   extractionError   TEXT,
   extractionMeta    TEXT,
-  extractedAt       INTEGER
+  extractedAt       INTEGER,
+
+  quarantineStatus  TEXT NOT NULL DEFAULT 'pending',
+  quarantineReason  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_attachments_communication    ON attachments(communicationId);
 CREATE INDEX IF NOT EXISTS idx_attachments_extractionstatus ON attachments(extractionStatus);
+CREATE INDEX IF NOT EXISTS idx_attachments_quarantinestatus ON attachments(quarantineStatus);
+CREATE INDEX IF NOT EXISTS idx_attachments_contenthash      ON attachments(contentHash);
 
 -- One row per detected wallet-address or keyword hit. Exactly one of
 -- communicationId/attachmentId is set per row (a match either came from a
@@ -145,5 +166,6 @@ CREATE INDEX IF NOT EXISTS idx_crypto_matches_type          ON crypto_matches(ma
 export function openDatabase(dbPath) {
   const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA_SQL);
+  runMigrations(db);
   return db;
 }

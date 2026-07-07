@@ -60,8 +60,8 @@ function getStatements(db) {
       VALUES (@communicationId, @role, @identifier, @displayName, @sortOrder)
     `),
     insertAttachment: db.prepare(`
-      INSERT INTO attachments (communicationId, filename, size, mimeType, savedPath)
-      VALUES (@communicationId, @filename, @size, @mimeType, @savedPath)
+      INSERT INTO attachments (communicationId, filename, size, mimeType, savedPath, contentHash)
+      VALUES (@communicationId, @filename, @size, @mimeType, @savedPath, @contentHash)
     `),
   };
 
@@ -118,6 +118,7 @@ function insertAttachments(db, communicationId, attachments) {
       size: a.size ?? null,
       mimeType: a.mimeType ?? null,
       savedPath: a.savedPath ?? null,
+      contentHash: a.contentHash ?? null,
     });
   }
 }

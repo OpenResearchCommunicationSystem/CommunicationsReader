@@ -1,7 +1,7 @@
 import { simpleParser } from 'mailparser';
 import path from 'node:path';
 import { writeFile, mkdir } from 'node:fs/promises';
-import { computeRawHash, computeNormalizedHash } from './hash.js';
+import { computeRawHash, computeNormalizedHash, sha256 } from './hash.js';
 import { normalizeBody } from './body-normalize.js';
 import { verifyMessageBodyEncoding } from './encoding-detect.js';
 
@@ -50,6 +50,7 @@ async function extractAttachments(parsedAttachments, outputAttachmentsDir, hashP
       size: att.size ?? att.content?.length ?? 0,
       mimeType: att.contentType || 'application/octet-stream',
       savedPath: null,
+      contentHash: att.content ? sha256(att.content) : null,
     }));
   }
 
@@ -65,6 +66,7 @@ async function extractAttachments(parsedAttachments, outputAttachmentsDir, hashP
       size: att.size ?? att.content?.length ?? 0,
       mimeType: att.contentType || 'application/octet-stream',
       savedPath,
+      contentHash: att.content ? sha256(att.content) : null,
     });
   }
   return results;

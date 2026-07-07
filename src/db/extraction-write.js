@@ -10,7 +10,9 @@ function getStatement(db) {
           extractedText = @extractedText,
           extractionError = @extractionError,
           extractionMeta = @extractionMeta,
-          extractedAt = @extractedAt
+          extractedAt = @extractedAt,
+          quarantineStatus = @quarantineStatus,
+          quarantineReason = @quarantineReason
       WHERE id = @id
     `);
     statementCache.set(db, stmt);
@@ -34,5 +36,7 @@ export function updateAttachmentExtraction(db, attachmentId, result) {
     extractionError: result.error ?? null,
     extractionMeta: result.meta ? JSON.stringify(result.meta) : null,
     extractedAt: Date.now(),
+    quarantineStatus: result.quarantineStatus ?? 'pending',
+    quarantineReason: result.quarantineReason ?? null,
   });
 }
