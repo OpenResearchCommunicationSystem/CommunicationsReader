@@ -10,6 +10,11 @@ import { mockDatasets, mockThreads, mockGetCommunication, mockCryptoMatches, moc
 
 const hasRealApi = typeof window !== 'undefined' && window.api;
 
+export async function getAppInfo() {
+  if (hasRealApi) return window.api.getAppInfo();
+  return { version: 'dev', buildNumber: 'dev', buildVersion: 'dev' };
+}
+
 export async function listDatasets() {
   if (hasRealApi) return window.api.listDatasets();
   return mockDatasets;

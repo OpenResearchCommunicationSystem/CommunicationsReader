@@ -18,9 +18,11 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState(null);
   const [searchError, setSearchError] = useState(null);
+  const [appInfo, setAppInfo] = useState(null);
 
   useEffect(() => {
     api.listDatasets().then(setDatasets).catch((err) => setError(err.message));
+    api.getAppInfo().then(setAppInfo).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -136,6 +138,11 @@ export default function App() {
     <div className="app-shell">
       <header className="app-titlebar">
         <span className="app-title">Communications Reader</span>
+        {appInfo && (
+          <span className="app-build-info">
+            v{appInfo.version} (build {appInfo.buildNumber})
+          </span>
+        )}
         {!api.isElectron && <span className="preview-badge">Preview mode (mock data)</span>}
       </header>
       {error && (

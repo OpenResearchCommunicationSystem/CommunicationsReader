@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { openDatabase } from '../src/db/schema.js';
@@ -14,6 +15,13 @@ import { runScan } from '../src/crypto-detect/run-scan.js';
 import { runSearch } from '../src/search/run-search.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+
+// Read once at startup, not per-request -- package.json never changes
+// while the app is running. Surfaced to the renderer via get-app-info so
+// the running build number is visible in the UI, matching the same
+// buildNumber baked into the packaged exe's Windows file-version resource
+// (see scripts/bump-build-number.mjs).
+const pkg = JSON.parse(readFileSync(path.join(here, '..', 'package.json'), 'utf8'));
 
 let db;
 let attachmentsRootDir;
@@ -29,6 +37,12 @@ function initStorage() {
 }
 
 function registerIpcHandlers() {
+  ipcMain.handle('get-app-info', () => ({
+    version: pkg.version,
+    buildNumber: pkg.buildNumber,
+    buildVersion: pkg.build?.buildVersion,
+  }));
+
   ipcMain.handle('list-datasets', () => listDatasets(db));
 
   ipcMain.handle('list-threads', (_event, datasetIds) => getThreadsForDatasets(db, datasetIds));
