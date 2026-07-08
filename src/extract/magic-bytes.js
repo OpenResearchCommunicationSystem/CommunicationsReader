@@ -10,13 +10,17 @@ import { looksLikeSupportedImage } from './ocr.js';
 const PDF_MAGIC_ASCII = '%PDF-';
 const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
 
-// The marker entry each OOXML kind is expected to contain -- a plain ZIP
+// A marker each OOXML kind is expected to contain -- a plain ZIP
 // signature alone doesn't distinguish a docx from an xlsx from an
-// arbitrary renamed zip archive.
-const OOXML_MARKER_ENTRY = {
-  docx: 'word/document.xml',
-  xlsx: 'xl/workbook.xml',
-  pptx: 'ppt/presentation.xml',
+// arbitrary renamed zip archive. pptx checks for a slide entry (what
+// src/extract/pptx.js itself actually consumes) rather than requiring
+// ppt/presentation.xml, since that's the real signal this codebase's own
+// extractor depends on.
+const SLIDE_ENTRY_RE = /^ppt\/slides\/slide\d+\.xml$/;
+const OOXML_KIND_MATCHERS = {
+  docx: (entryNames) => entryNames.has('word/document.xml'),
+  xlsx: (entryNames) => entryNames.has('xl/workbook.xml'),
+  pptx: (entryNames) => entryNames.has('ppt/presentation.xml') || [...entryNames].some((n) => SLIDE_ENTRY_RE.test(n)),
 };
 
 function startsWithBytes(buf, bytes) {
@@ -31,8 +35,8 @@ function detectOoxmlKind(buffer) {
   } catch {
     return 'zip-unknown';
   }
-  for (const [kind, marker] of Object.entries(OOXML_MARKER_ENTRY)) {
-    if (entryNames.has(marker)) return kind;
+  for (const [kind, matches] of Object.entries(OOXML_KIND_MATCHERS)) {
+    if (matches(entryNames)) return kind;
   }
   return 'zip-unknown';
 }

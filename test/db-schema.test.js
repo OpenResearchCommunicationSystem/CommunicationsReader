@@ -30,6 +30,8 @@ test('schema creates all expected tables and indexes', () => {
     'idx_participants_identifier',
     'idx_attachments_communication',
     'idx_attachments_extractionstatus',
+    'idx_attachments_quarantinestatus',
+    'idx_attachments_contenthash',
     'idx_crypto_matches_communication',
     'idx_crypto_matches_attachment',
     'idx_crypto_matches_type',
@@ -54,6 +56,24 @@ test('attachments table has the extraction-result columns with correct defaults'
   assert.equal(row.extractionStatus, 'not_attempted');
   assert.equal(row.extractedText, null);
   assert.equal(row.extractedAt, null);
+
+  db.close();
+});
+
+test('attachments table has the quarantine-lifecycle and contentHash columns with correct defaults', () => {
+  const db = openDatabase(':memory:');
+  const columns = db.prepare('PRAGMA table_info(attachments)').all().map((c) => c.name);
+  for (const col of ['contentHash', 'quarantineStatus', 'quarantineReason']) {
+    assert.ok(columns.includes(col), `expected attachments.${col} to exist`);
+  }
+
+  db.exec(`INSERT INTO datasets (sourceType, originalPath, importedAt) VALUES ('email-eml', 'x.zip', 0)`);
+  db.exec(`INSERT INTO communications (datasetId, sourceType, rawHash, normalizedHash, createdAt) VALUES (1, 'email', 'a', 'b', 0)`);
+  db.exec(`INSERT INTO attachments (communicationId, filename) VALUES (1, 'test.bin')`);
+  const row = db.prepare('SELECT * FROM attachments WHERE id = 1').get();
+  assert.equal(row.contentHash, null);
+  assert.equal(row.quarantineStatus, 'pending');
+  assert.equal(row.quarantineReason, null);
 
   db.close();
 });

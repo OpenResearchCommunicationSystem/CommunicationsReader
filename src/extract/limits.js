@@ -53,7 +53,9 @@ async function checkPdfPageCount(buffer) {
       throw new AttachmentLimitError(`pdf has ${doc.numPages} pages, exceeding the ${MAX_PDF_PAGE_COUNT}-page limit`);
     }
   } finally {
-    await doc.destroy();
+    // This pdfjs-dist build's PDFDocumentProxy has no destroy() -- confirmed
+    // directly against the installed version -- only cleanup().
+    await doc.cleanup();
   }
 }
 

@@ -31,7 +31,7 @@ test('extractAttachmentText: unsupported type is not_attempted, not a failure', 
   assert.equal(result.error, null);
 });
 
-test('extractAttachmentText: a real docx succeeds', async () => {
+test('extractAttachmentText: a real docx succeeds and is marked quarantineStatus verified', async () => {
   const { filePath, cleanup } = await writeBufferToTemp(buildMinimalDocx('Extraction contract test'), 'x.docx');
   try {
     const result = await extractAttachmentText({
@@ -42,6 +42,8 @@ test('extractAttachmentText: a real docx succeeds', async () => {
     assert.equal(result.status, 'attempted_succeeded');
     assert.equal(result.method, 'docx-mammoth');
     assert.ok(result.text.includes('Extraction contract test'));
+    assert.equal(result.quarantineStatus, 'verified');
+    assert.equal(result.quarantineReason, null);
   } finally {
     await cleanup();
   }
@@ -57,6 +59,26 @@ test('extractAttachmentText: a corrupt/missing file is attempted_failed, never t
   assert.equal(result.method, 'docx-mammoth');
   assert.ok(result.error);
   assert.equal(result.text, null);
+  assert.equal(result.quarantineStatus, 'error');
+});
+
+test('extractAttachmentText: a docx renamed to look like a pdf is quarantined, never reaches an extractor', async () => {
+  const { filePath, cleanup } = await writeBufferToTemp(buildMinimalDocx('should never be extracted'), 'fake.pdf');
+  try {
+    const result = await extractAttachmentText({
+      mimeType: 'application/pdf',
+      filename: 'fake.pdf',
+      savedPath: filePath,
+    });
+    assert.equal(result.status, 'not_attempted');
+    assert.equal(result.method, null);
+    assert.equal(result.text, null);
+    assert.equal(result.quarantineStatus, 'rejected');
+    assert.ok(result.quarantineReason.includes('pdf'));
+    assert.ok(result.quarantineReason.includes('docx'));
+  } finally {
+    await cleanup();
+  }
 });
 
 after(async () => {

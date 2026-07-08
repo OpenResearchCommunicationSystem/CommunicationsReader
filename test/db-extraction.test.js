@@ -60,16 +60,19 @@ test('runExtraction processes not_attempted attachments and writes results back'
     const unsupportedRow = db.prepare('SELECT * FROM attachments WHERE id = ?').get(unsupportedAttachmentId);
     assert.equal(unsupportedRow.extractionStatus, 'not_attempted');
     assert.equal(unsupportedRow.extractionMethod, null);
+    assert.equal(unsupportedRow.quarantineStatus, 'pending');
 
     const docxRow = db.prepare('SELECT * FROM attachments WHERE id = ?').get(docxAttachmentId);
     assert.equal(docxRow.extractionStatus, 'attempted_succeeded');
     assert.equal(docxRow.extractionMethod, 'docx-mammoth');
     assert.ok(docxRow.extractedText.includes('Extraction pipeline test content'));
     assert.ok(docxRow.extractedAt > 0);
+    assert.equal(docxRow.quarantineStatus, 'verified');
 
     const brokenRow = db.prepare('SELECT * FROM attachments WHERE id = ?').get(brokenAttachmentId);
     assert.equal(brokenRow.extractionStatus, 'attempted_failed');
     assert.ok(brokenRow.extractionError);
+    assert.equal(brokenRow.quarantineStatus, 'error');
 
     // A second run with no force option should find nothing left to do.
     const secondSummary = await runExtraction(db, { datasetIds: [datasetId] });

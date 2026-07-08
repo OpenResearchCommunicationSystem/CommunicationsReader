@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { simpleParser } from 'mailparser';
 import { parseMessage } from '../src/parser/message-parse.js';
+import { sha256 } from '../src/parser/hash.js';
 import {
   buildMissingMessageIdEml,
   buildEmptyBodyEml,
@@ -43,6 +44,7 @@ test('attachments are captured with filename/size/mimeType and written to disk',
     assert.ok(att.savedPath);
     const savedContent = await readFile(att.savedPath, 'utf8');
     assert.equal(savedContent, 'Attachment file contents.');
+    assert.equal(att.contentHash, sha256(Buffer.from('Attachment file contents.', 'utf8')));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
