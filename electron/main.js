@@ -13,6 +13,8 @@ import { importArchive } from '../src/parser/index.js';
 import { runExtraction } from '../src/extract/run-extraction.js';
 import { runScan } from '../src/crypto-detect/run-scan.js';
 import { runSearch } from '../src/search/run-search.js';
+import { hashFileStreaming } from '../src/parser/hash.js';
+import { appendEvent } from '../src/audit/audit-log.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -34,6 +36,10 @@ function initStorage() {
   // (read-only, once packaged) app directory -- see its own comment.
   process.env.TESSDATA_CACHE_DIR = path.join(userData, 'tessdata-cache');
   db = openDatabase(dbPath);
+  appendEvent(db, {
+    eventType: 'app_launch',
+    payload: { version: pkg.version, buildNumber: pkg.buildNumber, buildVersion: pkg.build?.buildVersion },
+  });
 }
 
 function registerIpcHandlers() {
@@ -64,6 +70,19 @@ function registerIpcHandlers() {
     const outputAttachmentsDir = path.join(attachmentsRootDir, `${Date.now()}-${label}`);
     await fs.mkdir(outputAttachmentsDir, { recursive: true });
 
+    // Hash the whole source archive before extraction begins -- distinct
+    // from the per-message rawHash/normalizedHash on communications,
+    // this is a single fingerprint for the archive as the investigator
+    // received it. Streaming read so this doesn't require loading a
+    // near-TB archive fully into memory just to hash it.
+    const archiveStat = await fs.stat(zipPath);
+    const archiveSha256 = await hashFileStreaming(zipPath);
+    appendEvent(db, {
+      eventType: 'dataset_import_started',
+      subjectRef: zipPath,
+      payload: { archiveSha256, size: archiveStat.size, originalPath: zipPath, label },
+    });
+
     const importResult = await importArchive({ zipPath, outputAttachmentsDir });
     const sourceType = importResult.containerType === 'mbox' ? 'email-mbox' : 'email-eml';
     const inserted = insertImportResult(db, importResult, {
@@ -71,6 +90,18 @@ function registerIpcHandlers() {
       originalPath: zipPath,
       label,
       attachmentsDir: outputAttachmentsDir,
+    });
+
+    appendEvent(db, {
+      eventType: 'dataset_import_completed',
+      subjectRef: String(inserted.datasetId),
+      payload: {
+        datasetId: inserted.datasetId,
+        archiveSha256,
+        insertedCount: inserted.insertedCount,
+        insertFailureCount: inserted.insertFailures.length,
+        parseSummary: importResult.summary,
+      },
     });
 
     // Extraction and crypto scanning run immediately after import so the
@@ -94,7 +125,7 @@ function registerIpcHandlers() {
   ipcMain.handle('run-search', (_event, { datasetIds, query }) => runSearch(db, { datasetIds, query }));
 
   ipcMain.handle('export-attachment', async (_event, attachmentId) => {
-    const row = db.prepare('SELECT filename, savedPath FROM attachments WHERE id = ?').get(attachmentId);
+    const row = db.prepare('SELECT filename, savedPath, contentHash FROM attachments WHERE id = ?').get(attachmentId);
     if (!row || !row.savedPath) {
       throw new Error('This attachment has no saved file to export.');
     }
@@ -106,6 +137,13 @@ function registerIpcHandlers() {
     if (result.canceled || !result.filePath) return null;
 
     await fs.copyFile(row.savedPath, result.filePath);
+
+    appendEvent(db, {
+      eventType: 'export_created',
+      subjectRef: String(attachmentId),
+      payload: { attachmentId, filename: row.filename, contentHash: row.contentHash, exportedTo: result.filePath },
+    });
+
     return result.filePath;
   });
 

@@ -50,10 +50,19 @@ test('runExtraction processes not_attempted attachments and writes results back'
     mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     savedPath: '/definitely/missing.docx',
   });
+  const { filePath: disguisedPath, cleanup: cleanupDisguised } = await writeBufferToTemp(
+    buildMinimalDocx('should never be extracted'),
+    'fake.pdf'
+  );
+  const quarantinedAttachmentId = insertAttachment(db, communicationId, {
+    filename: 'fake.pdf',
+    mimeType: 'application/pdf',
+    savedPath: disguisedPath,
+  });
 
   try {
     const summary = await runExtraction(db, { datasetIds: [datasetId] });
-    assert.equal(summary.attempted, 3);
+    assert.equal(summary.attempted, 4);
     assert.equal(summary.succeeded, 1);
     assert.equal(summary.failed, 1);
 
@@ -74,15 +83,37 @@ test('runExtraction processes not_attempted attachments and writes results back'
     assert.ok(brokenRow.extractionError);
     assert.equal(brokenRow.quarantineStatus, 'error');
 
+    const quarantinedRow = db.prepare('SELECT * FROM attachments WHERE id = ?').get(quarantinedAttachmentId);
+    assert.equal(quarantinedRow.extractionStatus, 'not_attempted');
+    assert.equal(quarantinedRow.quarantineStatus, 'rejected');
+    assert.ok(quarantinedRow.quarantineReason);
+
+    // extraction_run logs a summary event; attachment_quarantined logs
+    // the rejected attachment specifically (S2 audit log).
+    const events = db.prepare('SELECT * FROM audit_log ORDER BY sequenceNumber ASC').all();
+    const runEvent = events.find((e) => e.eventType === 'extraction_run');
+    assert.ok(runEvent);
+    const runPayload = JSON.parse(runEvent.payloadJson);
+    assert.equal(runPayload.attempted, 4);
+    assert.equal(runPayload.succeeded, 1);
+    assert.equal(runPayload.failed, 1);
+    assert.equal(runPayload.quarantined, 1);
+
+    const quarantineEvent = events.find((e) => e.eventType === 'attachment_quarantined');
+    assert.ok(quarantineEvent);
+    assert.equal(quarantineEvent.subjectRef, String(quarantinedAttachmentId));
+
     // A second run with no force option should find nothing left to do.
     const secondSummary = await runExtraction(db, { datasetIds: [datasetId] });
     assert.equal(secondSummary.attempted, 0);
 
-    // force: true re-processes everything, including already-succeeded rows.
+    // force: true re-processes everything EXCEPT the rejected/quarantined
+    // attachment, which is never retried even under force.
     const forcedSummary = await runExtraction(db, { datasetIds: [datasetId], force: true });
     assert.equal(forcedSummary.attempted, 3);
   } finally {
     await cleanupDocx();
+    await cleanupDisguised();
     db.close();
   }
 });

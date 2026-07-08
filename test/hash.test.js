@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeRawHash, computeNormalizedHash } from '../src/parser/hash.js';
+import { computeRawHash, computeNormalizedHash, sha256, hashFileStreaming } from '../src/parser/hash.js';
 import { normalizeBody } from '../src/parser/body-normalize.js';
 import { buildDedupPair } from './fixtures/generate-fixtures.js';
+import { writeBufferToTemp } from './helpers/temp-file.js';
 
 test('rawHash of byte-identical messages matches', () => {
   const { identicalA, identicalB } = buildDedupPair();
@@ -31,4 +32,19 @@ test('changing the body changes both hashes', () => {
   const hashA = computeNormalizedHash('hello world', { subject: 's', from: 'f' });
   const hashB = computeNormalizedHash('hello world!', { subject: 's', from: 'f' });
   assert.notEqual(hashA, hashB);
+});
+
+test('hashFileStreaming matches sha256 of the same bytes computed in-memory', async () => {
+  const content = Buffer.from('the whole archive, hashed via a streaming read');
+  const { filePath, cleanup } = await writeBufferToTemp(content, 'archive.zip');
+  try {
+    const streamed = await hashFileStreaming(filePath);
+    assert.equal(streamed, sha256(content));
+  } finally {
+    await cleanup();
+  }
+});
+
+test('hashFileStreaming rejects (never throws synchronously) on a missing file', async () => {
+  await assert.rejects(() => hashFileStreaming('/definitely/does/not/exist.zip'));
 });

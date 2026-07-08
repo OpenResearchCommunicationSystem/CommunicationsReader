@@ -156,6 +156,30 @@ CREATE TABLE IF NOT EXISTS crypto_matches (
 CREATE INDEX IF NOT EXISTS idx_crypto_matches_communication ON crypto_matches(communicationId);
 CREATE INDEX IF NOT EXISTS idx_crypto_matches_attachment    ON crypto_matches(attachmentId);
 CREATE INDEX IF NOT EXISTS idx_crypto_matches_type          ON crypto_matches(matchType);
+
+-- Append-only, hash-chained operational record of ingest/processing/
+-- export events (app_launch, dataset_import_started/completed,
+-- extraction_run, scan_run, attachment_quarantined, export_created,
+-- materialization_created). See src/audit/audit-log.js for the full
+-- disclaimer this table implies: it is operational record-keeping for
+-- malware containment, case compartmentalization, and the analyst's own
+-- reference -- it is NOT a chain-of-custody or evidentiary system.
+-- sequenceNumber is monotonic; recordHash covers this row's own fields
+-- PLUS prevRecordHash, so a retroactive edit to any earlier row is
+-- detectable from that point forward via verifyChain().
+CREATE TABLE IF NOT EXISTS audit_log (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  sequenceNumber  INTEGER NOT NULL UNIQUE,
+  timestampUtc    TEXT NOT NULL,
+  eventType       TEXT NOT NULL,
+  subjectRef      TEXT,
+  payloadJson     TEXT,
+  prevRecordHash  TEXT,
+  recordHash      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_sequence  ON audit_log(sequenceNumber);
+CREATE INDEX IF NOT EXISTS idx_audit_log_eventtype ON audit_log(eventType);
 `;
 
 /**

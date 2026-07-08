@@ -47,6 +47,12 @@ test('runScan finds wallet/keyword matches in both communication bodies and extr
   assert.ok(bodyMatches.some((m) => m.patternName === 'keyword_en_tether'));
   assert.ok(attachmentMatches.some((m) => m.patternName === 'keyword_fa_hawala'));
 
+  const scanEvent = db.prepare(`SELECT * FROM audit_log WHERE eventType = 'scan_run' ORDER BY sequenceNumber DESC LIMIT 1`).get();
+  assert.ok(scanEvent);
+  const scanPayload = JSON.parse(scanEvent.payloadJson);
+  assert.equal(scanPayload.scannedCount, summary.scannedCount);
+  assert.equal(scanPayload.matchCount, summary.matchCount);
+
   db.close();
 });
 

@@ -1,6 +1,7 @@
 import { extractAttachmentText } from './attachment-extract.js';
 import { updateAttachmentExtraction } from '../db/extraction-write.js';
 import { terminateOcrWorker } from './ocr.js';
+import { appendEvent } from '../audit/audit-log.js';
 
 /**
  * Runs text extraction over every attachment with extractionStatus =
@@ -50,6 +51,7 @@ export async function runExtraction(db, options = {}) {
 
   let succeeded = 0;
   let failed = 0;
+  let quarantined = 0;
 
   try {
     for (const row of rows) {
@@ -58,6 +60,18 @@ export async function runExtraction(db, options = {}) {
         updateAttachmentExtraction(db, row.id, result);
         if (result.status === 'attempted_succeeded') succeeded++;
         if (result.status === 'attempted_failed') failed++;
+        // Quarantine/rejection is forensically significant on its own --
+        // logged separately from the extraction_run summary below so a
+        // reviewer scanning the audit log for attachment_quarantined
+        // events doesn't have to cross-reference batch run summaries.
+        if (result.quarantineStatus === 'rejected') {
+          quarantined++;
+          appendEvent(db, {
+            eventType: 'attachment_quarantined',
+            subjectRef: String(row.id),
+            payload: { attachmentId: row.id, filename: row.filename, quarantineReason: result.quarantineReason },
+          });
+        }
       } catch (err) {
         // extractAttachmentText contracts to never throw, but guard the
         // batch loop anyway (belt-and-suspenders, same as insert.js).
@@ -74,6 +88,12 @@ export async function runExtraction(db, options = {}) {
   } finally {
     await terminateOcrWorker();
   }
+
+  appendEvent(db, {
+    eventType: 'extraction_run',
+    subjectRef: Array.isArray(datasetIds) ? datasetIds.join(',') : null,
+    payload: { datasetIds: datasetIds ?? null, force, attempted: rows.length, succeeded, failed, quarantined },
+  });
 
   return { attempted: rows.length, succeeded, failed };
 }

@@ -1,5 +1,6 @@
 import { scanCommunication, scanAttachment } from './scan.js';
 import { insertCryptoMatches, deleteCryptoMatchesFor } from '../db/crypto-write.js';
+import { appendEvent } from '../audit/audit-log.js';
 
 /**
  * Re-runnable batch scan over communications.bodyText and (already
@@ -57,6 +58,12 @@ export function runScan(db, options = {}) {
       failures.push({ attachmentId: attachment.id, error: err.message });
     }
   }
+
+  appendEvent(db, {
+    eventType: 'scan_run',
+    subjectRef: hasScope ? datasetIds.join(',') : null,
+    payload: { datasetIds: hasScope ? datasetIds : null, scannedCount, matchCount, failureCount: failures.length },
+  });
 
   return { scannedCount, matchCount, failures };
 }
