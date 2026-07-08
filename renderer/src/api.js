@@ -51,6 +51,11 @@ export async function importArchive() {
   throw new Error('importArchive is only available inside the Electron app');
 }
 
+export async function importAutopsyCase() {
+  if (hasRealApi) return window.api.importAutopsyCase();
+  throw new Error('importAutopsyCase is only available inside the Electron app');
+}
+
 export async function runExtraction(options) {
   if (hasRealApi) return window.api.runExtraction(options);
   throw new Error('runExtraction is only available inside the Electron app');

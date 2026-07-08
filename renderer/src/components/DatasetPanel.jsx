@@ -4,6 +4,7 @@ export default function DatasetPanel({
   onToggle,
   onSelectAll,
   onImportClick,
+  onImportAutopsyCaseClick,
   onDelete,
   availableLangs,
   selectedLangs,
@@ -17,6 +18,9 @@ export default function DatasetPanel({
       <div className="panel-header">
         <h2>Datasets</h2>
         <button className="import-button" onClick={onImportClick}>+ Import</button>
+        <button className="import-button" onClick={onImportAutopsyCaseClick} title="Import an existing Autopsy case (reads message content from autopsy.db; attachments come through as hash/metadata only, no file content)">
+          + Import Autopsy Case…
+        </button>
       </div>
       {availableLangs && (
         <div className="ocr-lang-picker">

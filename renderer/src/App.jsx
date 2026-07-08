@@ -114,6 +114,17 @@ export default function App() {
     }
   }
 
+  async function handleImportAutopsyCaseClick() {
+    try {
+      const result = await api.importAutopsyCase();
+      if (result) {
+        api.listDatasets().then(setDatasets);
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function handleExportAttachment(attachmentId) {
     try {
       await api.exportAttachment(attachmentId);
@@ -253,6 +264,7 @@ export default function App() {
           onToggle={toggleDataset}
           onSelectAll={selectAllDatasets}
           onImportClick={handleImportClick}
+          onImportAutopsyCaseClick={handleImportAutopsyCaseClick}
           onDelete={handleDeleteDataset}
           availableLangs={availableLangs}
           selectedLangs={selectedLangs}

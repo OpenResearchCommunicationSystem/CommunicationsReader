@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   getCommunication: (id) => ipcRenderer.invoke('get-communication', id),
   getCryptoMatches: (datasetIds) => ipcRenderer.invoke('get-crypto-matches', datasetIds),
   importArchive: () => ipcRenderer.invoke('import-archive'),
+  importAutopsyCase: () => ipcRenderer.invoke('import-autopsy-case'),
   getAvailableLangs: () => ipcRenderer.invoke('get-available-langs'),
   runExtraction: (options) => ipcRenderer.invoke('run-extraction', options),
   runScan: (datasetIds) => ipcRenderer.invoke('run-scan', datasetIds),

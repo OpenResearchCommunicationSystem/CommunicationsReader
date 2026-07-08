@@ -65,6 +65,7 @@ export function mapEmailMessageToCommunication(message, datasetId) {
     size: att.size ?? null,
     mimeType: att.mimeType ?? null,
     savedPath: att.savedPath ?? null,
+    contentHash: att.contentHash ?? null,
   }));
 
   return { communication, participants, attachments };

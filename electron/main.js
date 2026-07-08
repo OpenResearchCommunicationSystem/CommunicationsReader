@@ -26,6 +26,7 @@ import { appendEvent } from '../src/audit/audit-log.js';
 import { addToFocusSet, removeFromFocusSet, clearFocusSet, listFocusSet } from '../src/db/focus-set.js';
 import { materializeFocusSet } from '../src/db/materialize.js';
 import { persistThreads } from '../src/threading/persist-threads.js';
+import { importAutopsyCase } from '../src/import-autopsy/import-autopsy-case.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -206,6 +207,66 @@ function registerIpcHandlers() {
     runScan(db, { datasetIds: [inserted.datasetId] });
     // Whole-DB rebuild (not scoped to this dataset) -- threading can link
     // messages across datasets, see persistThreads()'s own comment.
+    persistThreads(db);
+
+    return {
+      datasetId: inserted.datasetId,
+      label,
+      parseSummary: importResult.summary,
+      insertedCount: inserted.insertedCount,
+    };
+  });
+
+  // Imports an existing Autopsy case as its own independent source module
+  // (same conceptual slot a future UFDR/SMS/chat importer would occupy) --
+  // not a substitute for import-archive, and not dependent on it. Reads
+  // only autopsy.db's own records (parsed Headers/Message-Plaintext
+  // attributes, hashes): Autopsy's exported ModuleOutput file copies were
+  // found to be unreliable against this project's sample case (scrambled
+  // on export, verified via independent hash comparison against the real
+  // source archive), while the database rows themselves check out, so
+  // this project never reads those exported files -- see
+  // src/import-autopsy/read-case.js. Attachments come through as metadata/
+  // hash stubs only (no retrievable content from this source alone). No
+  // archiveSha256 is passed here, so unlike import-archive, an interrupted
+  // Autopsy-case import is not resumable -- re-running it creates a fresh
+  // dataset rather than continuing the last one, an accepted v1 gap.
+  ipcMain.handle('import-autopsy-case', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Select an Autopsy case folder (the one containing the .aut file)',
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+
+    const caseDir = result.filePaths[0];
+    const label = path.basename(caseDir);
+
+    appendEvent(db, {
+      eventType: 'dataset_import_started',
+      subjectRef: caseDir,
+      payload: { originalPath: caseDir, label, sourceType: 'autopsy-case' },
+    });
+
+    const importResult = await importAutopsyCase({ caseDir });
+    const inserted = insertImportResult(db, importResult, {
+      sourceType: 'autopsy-case',
+      originalPath: caseDir,
+      label,
+    });
+
+    appendEvent(db, {
+      eventType: 'dataset_import_completed',
+      subjectRef: String(inserted.datasetId),
+      payload: {
+        datasetId: inserted.datasetId,
+        insertedCount: inserted.insertedCount,
+        insertFailureCount: inserted.insertFailures.length,
+        parseSummary: importResult.summary,
+      },
+    });
+
+    await runExtraction(db, { datasetIds: [inserted.datasetId] });
+    runScan(db, { datasetIds: [inserted.datasetId] });
     persistThreads(db);
 
     return {
