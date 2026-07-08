@@ -5,3 +5,4 @@ test/fixtures/generated/
 .tessdata-cache/
 dist/
 release/
+sample-data/

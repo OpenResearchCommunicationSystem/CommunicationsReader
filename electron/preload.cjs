@@ -15,4 +15,9 @@ contextBridge.exposeInMainWorld('api', {
   runSearch: (options) => ipcRenderer.invoke('run-search', options),
   exportAttachment: (attachmentId) => ipcRenderer.invoke('export-attachment', attachmentId),
   deleteDataset: (datasetId) => ipcRenderer.invoke('delete-dataset', datasetId),
+  focusAdd: (communicationIds, addedVia, sourceNote) => ipcRenderer.invoke('focus-add', { communicationIds, addedVia, sourceNote }),
+  focusRemove: (communicationIds) => ipcRenderer.invoke('focus-remove', communicationIds),
+  focusClear: () => ipcRenderer.invoke('focus-clear'),
+  focusList: () => ipcRenderer.invoke('focus-list'),
+  focusMaterialize: () => ipcRenderer.invoke('focus-materialize'),
 });

@@ -6,7 +6,18 @@
 // hygiene). When running standalone in a browser (`npm run dev:renderer`
 // with no Electron), window.api is undefined and these fall back to
 // mock data so the UI can be built/previewed without the full app.
-import { mockDatasets, mockThreads, mockGetCommunication, mockCryptoMatches, mockRunSearch } from './mockData.js';
+import {
+  mockDatasets,
+  mockThreads,
+  mockGetCommunication,
+  mockCryptoMatches,
+  mockRunSearch,
+  mockFocusAdd,
+  mockFocusRemove,
+  mockFocusClear,
+  mockFocusList,
+  mockFocusMaterialize,
+} from './mockData.js';
 
 const hasRealApi = typeof window !== 'undefined' && window.api;
 
@@ -63,6 +74,31 @@ export async function exportAttachment(attachmentId) {
 export async function deleteDataset(datasetId) {
   if (hasRealApi) return window.api.deleteDataset(datasetId);
   throw new Error('deleteDataset is only available inside the Electron app');
+}
+
+export async function focusAdd(communicationIds, addedVia, sourceNote) {
+  if (hasRealApi) return window.api.focusAdd(communicationIds, addedVia, sourceNote);
+  return mockFocusAdd(communicationIds);
+}
+
+export async function focusRemove(communicationIds) {
+  if (hasRealApi) return window.api.focusRemove(communicationIds);
+  return mockFocusRemove(communicationIds);
+}
+
+export async function focusClear() {
+  if (hasRealApi) return window.api.focusClear();
+  return mockFocusClear();
+}
+
+export async function focusList() {
+  if (hasRealApi) return window.api.focusList();
+  return mockFocusList();
+}
+
+export async function focusMaterialize() {
+  if (hasRealApi) return window.api.focusMaterialize();
+  return mockFocusMaterialize();
 }
 
 export const isElectron = hasRealApi;

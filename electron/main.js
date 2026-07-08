@@ -15,6 +15,8 @@ import { runScan } from '../src/crypto-detect/run-scan.js';
 import { runSearch } from '../src/search/run-search.js';
 import { hashFileStreaming } from '../src/parser/hash.js';
 import { appendEvent } from '../src/audit/audit-log.js';
+import { addToFocusSet, removeFromFocusSet, clearFocusSet, listFocusSet } from '../src/db/focus-set.js';
+import { materializeFocusSet } from '../src/db/materialize.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -145,6 +147,26 @@ function registerIpcHandlers() {
     });
 
     return result.filePath;
+  });
+
+  ipcMain.handle('focus-add', (_event, { communicationIds, addedVia, sourceNote }) =>
+    addToFocusSet(db, communicationIds, { addedVia, sourceNote })
+  );
+
+  ipcMain.handle('focus-remove', (_event, communicationIds) => removeFromFocusSet(db, communicationIds));
+
+  ipcMain.handle('focus-clear', () => clearFocusSet(db));
+
+  ipcMain.handle('focus-list', () => listFocusSet(db));
+
+  ipcMain.handle('focus-materialize', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Choose a folder to export the focus set into',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+
+    return materializeFocusSet(db, result.filePaths[0]);
   });
 
   ipcMain.handle('delete-dataset', async (event, datasetId) => {

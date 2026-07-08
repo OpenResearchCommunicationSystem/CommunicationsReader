@@ -3,7 +3,7 @@ function formatDateTime(ts) {
   return new Date(ts).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-export default function MessageList({ thread, selectedCommunicationId, onSelect, matchedIds }) {
+export default function MessageList({ thread, selectedCommunicationId, onSelect, matchedIds, focusedIds, onAddToFocus }) {
   if (!thread) {
     return (
       <div className="message-list">
@@ -23,6 +23,7 @@ export default function MessageList({ thread, selectedCommunicationId, onSelect,
       <ul>
         {thread.members.map((member) => {
           const isDimmed = matchedIds != null && !matchedIds.has(member.communicationId);
+          const isFocused = focusedIds != null && focusedIds.has(member.communicationId);
           return (
             <li key={member.communicationId}>
               <button
@@ -31,6 +32,13 @@ export default function MessageList({ thread, selectedCommunicationId, onSelect,
               >
                 <div className="message-date">{formatDateTime(member.timestamp)}</div>
                 <div className="message-subject">{member.subject}</div>
+              </button>
+              <button
+                className={`add-focus-button icon-only ${isFocused ? 'is-focused' : ''}`}
+                onClick={() => onAddToFocus(member.communicationId)}
+                title={isFocused ? 'Already in focus' : 'Add to focus'}
+              >
+                {isFocused ? '✓' : '+'}
               </button>
             </li>
           );

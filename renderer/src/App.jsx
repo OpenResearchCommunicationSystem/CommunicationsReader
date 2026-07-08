@@ -4,6 +4,7 @@ import ThreadList from './components/ThreadList.jsx';
 import MessageList from './components/MessageList.jsx';
 import ReadingPane from './components/ReadingPane.jsx';
 import SearchPanel from './components/SearchPanel.jsx';
+import FocusPanel from './components/FocusPanel.jsx';
 import * as api from './api.js';
 
 export default function App() {
@@ -19,10 +20,18 @@ export default function App() {
   const [searchResults, setSearchResults] = useState(null);
   const [searchError, setSearchError] = useState(null);
   const [appInfo, setAppInfo] = useState(null);
+  const [focusSet, setFocusSet] = useState([]);
+  const [materializing, setMaterializing] = useState(false);
+  const [materializeStatus, setMaterializeStatus] = useState(null);
+
+  function loadFocusSet() {
+    return api.focusList().then(setFocusSet).catch((err) => setError(err.message));
+  }
 
   useEffect(() => {
     api.listDatasets().then(setDatasets).catch((err) => setError(err.message));
     api.getAppInfo().then(setAppInfo).catch(() => {});
+    loadFocusSet();
   }, []);
 
   useEffect(() => {
@@ -68,6 +77,8 @@ export default function App() {
     return threads.filter((t) => t.members.some((m) => matchedCommunicationIds.has(m.communicationId)));
   }, [threads, matchedCommunicationIds]);
 
+  const focusedIds = useMemo(() => new Set(focusSet.map((c) => c.id)), [focusSet]);
+
   function toggleDataset(id) {
     setSelectedDatasetIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
@@ -109,6 +120,56 @@ export default function App() {
       }
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function handleAddToFocus(communicationId) {
+    try {
+      await api.focusAdd([communicationId], 'manual');
+      await loadFocusSet();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleAddThreadToFocus(thread) {
+    try {
+      await api.focusAdd(thread.members.map((m) => m.communicationId), 'thread_expand', thread.subject);
+      await loadFocusSet();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleRemoveFromFocus(communicationId) {
+    try {
+      await api.focusRemove([communicationId]);
+      await loadFocusSet();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleClearFocus() {
+    try {
+      await api.focusClear();
+      await loadFocusSet();
+      setMaterializeStatus(null);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleMaterializeFocus() {
+    setMaterializing(true);
+    setMaterializeStatus(null);
+    try {
+      const result = await api.focusMaterialize();
+      setMaterializeStatus(result); // null (dialog cancelled) clears any prior status
+    } catch (err) {
+      setMaterializeStatus({ error: err.message });
+    } finally {
+      setMaterializing(false);
     }
   }
 
@@ -165,14 +226,31 @@ export default function App() {
           onImportClick={handleImportClick}
           onDelete={handleDeleteDataset}
         />
-        <ThreadList threads={visibleThreads} selectedThreadId={selectedThreadId} onSelect={selectThread} />
+        <ThreadList
+          threads={visibleThreads}
+          selectedThreadId={selectedThreadId}
+          onSelect={selectThread}
+          onAddThreadToFocus={handleAddThreadToFocus}
+        />
         <MessageList
           thread={selectedThread}
           selectedCommunicationId={selectedCommunicationId}
           onSelect={setSelectedCommunicationId}
           matchedIds={matchedCommunicationIds}
+          focusedIds={focusedIds}
+          onAddToFocus={handleAddToFocus}
         />
         <ReadingPane communication={communication} cryptoMatches={cryptoMatches} onExportAttachment={handleExportAttachment} />
+        <FocusPanel
+          focusSet={focusSet}
+          selectedCommunicationId={selectedCommunicationId}
+          onSelect={setSelectedCommunicationId}
+          onRemove={handleRemoveFromFocus}
+          onClear={handleClearFocus}
+          onMaterialize={handleMaterializeFocus}
+          materializing={materializing}
+          materializeStatus={materializeStatus}
+        />
       </div>
     </div>
   );

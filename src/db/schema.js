@@ -190,6 +190,24 @@ CREATE TABLE IF NOT EXISTS app_meta (
   key   TEXT PRIMARY KEY,
   value TEXT
 );
+
+-- An iteratively-built working set of communications the investigator has
+-- deliberately pulled out to focus on -- built up across multiple
+-- searches/techniques, one message or one whole thread at a time (see
+-- src/db/focus-set.js). Not scoped to a single dataset -- a focus set can
+-- legitimately span datasets, same as cross-dataset dedup already does.
+-- UNIQUE on communicationId makes adding an already-present member
+-- (e.g. individually, then again via "add whole thread") a safe no-op.
+CREATE TABLE IF NOT EXISTS focus_set_members (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  communicationId   INTEGER NOT NULL REFERENCES communications(id) ON DELETE CASCADE,
+  addedVia          TEXT NOT NULL,
+  addedAt           INTEGER NOT NULL,
+  sourceNote        TEXT,
+  UNIQUE(communicationId)
+);
+
+CREATE INDEX IF NOT EXISTS idx_focus_set_members_communication ON focus_set_members(communicationId);
 `;
 
 /**

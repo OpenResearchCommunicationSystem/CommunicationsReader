@@ -29,22 +29,31 @@ function attachParticipantsAndAttachments(db, communications) {
 /**
  * Lists communications, optionally scoped to a set of dataset ids (the
  * "select one, multiple, or all datasets" requirement -- an empty/omitted
- * datasetIds means all datasets).
+ * datasetIds means all datasets) and/or a specific set of communication
+ * ids (e.g. src/db/focus-set.js's working set) -- an empty/omitted ids
+ * means no id filtering.
  *
- * options: { datasetIds?: number[], limit?: number, offset?: number,
- * orderBy?: 'timestamp' | 'createdAt' }
+ * options: { datasetIds?: number[], ids?: number[], limit?: number,
+ * offset?: number, orderBy?: 'timestamp' | 'createdAt' }
  */
 export function listCommunications(db, options = {}) {
-  const { datasetIds, limit, offset = 0, orderBy = 'timestamp' } = options;
+  const { datasetIds, ids, limit, offset = 0, orderBy = 'timestamp' } = options;
   const orderColumn = orderBy === 'createdAt' ? 'createdAt' : 'timestamp';
 
   let sql = 'SELECT * FROM communications';
   const params = [];
+  const conditions = [];
 
   if (Array.isArray(datasetIds) && datasetIds.length > 0) {
-    const placeholders = datasetIds.map(() => '?').join(', ');
-    sql += ` WHERE datasetId IN (${placeholders})`;
+    conditions.push(`datasetId IN (${datasetIds.map(() => '?').join(', ')})`);
     params.push(...datasetIds);
+  }
+  if (Array.isArray(ids) && ids.length > 0) {
+    conditions.push(`id IN (${ids.map(() => '?').join(', ')})`);
+    params.push(...ids);
+  }
+  if (conditions.length > 0) {
+    sql += ' WHERE ' + conditions.join(' AND ');
   }
 
   sql += ` ORDER BY ${orderColumn} ASC`;

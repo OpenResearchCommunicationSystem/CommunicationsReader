@@ -117,6 +117,53 @@ export function mockGetCommunication(id) {
   return mockCommunications[id] || null;
 }
 
+// Module-level so it behaves like a real backend's persisted focus set
+// across calls within one preview session -- ordered by add time, same
+// as the real focus_set_members table's addedAt ordering.
+let mockFocusSetIds = [];
+
+export function mockFocusAdd(communicationIds) {
+  let added = 0;
+  for (const id of communicationIds) {
+    if (!mockFocusSetIds.includes(id)) {
+      mockFocusSetIds.push(id);
+      added++;
+    }
+  }
+  return added;
+}
+
+export function mockFocusRemove(communicationIds) {
+  const before = mockFocusSetIds.length;
+  mockFocusSetIds = mockFocusSetIds.filter((id) => !communicationIds.includes(id));
+  return before - mockFocusSetIds.length;
+}
+
+export function mockFocusClear() {
+  const count = mockFocusSetIds.length;
+  mockFocusSetIds = [];
+  return count;
+}
+
+export function mockFocusList() {
+  return mockFocusSetIds.map((id) => mockCommunications[id]).filter(Boolean);
+}
+
+export function mockFocusMaterialize() {
+  // Count only ids with a real mock detail record, same as mockFocusList
+  // -- the real backend can never have this mismatch (focus_set_members
+  // has a foreign key against communications), but this fixture data
+  // only fleshes out a few messages per thread.
+  return {
+    outputDir: '(preview mode -- nothing actually written to disk)',
+    datasetCount: 1,
+    communicationCount: mockFocusList().length,
+    totalAttachmentReferences: 0,
+    uniqueFiles: 0,
+    duplicatesSaved: 0,
+  };
+}
+
 export const mockCryptoMatches = [
   { id: 1, communicationId: 7, attachmentId: null, matchType: 'keyword', patternName: 'keyword_fa_exchange_house', matchedText: 'صرافی', sourceField: 'bodyText' },
 ];

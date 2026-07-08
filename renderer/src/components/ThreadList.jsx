@@ -3,7 +3,7 @@ function formatDate(ts) {
   return new Date(ts).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-export default function ThreadList({ threads, selectedThreadId, onSelect }) {
+export default function ThreadList({ threads, selectedThreadId, onSelect, onAddThreadToFocus }) {
   return (
     <div className="thread-list">
       <div className="panel-header">
@@ -26,6 +26,13 @@ export default function ThreadList({ threads, selectedThreadId, onSelect }) {
               <div className="thread-daterange">
                 {formatDate(thread.dateRange.start)} &ndash; {formatDate(thread.dateRange.end)}
               </div>
+            </button>
+            <button
+              className="add-focus-button"
+              onClick={() => onAddThreadToFocus(thread)}
+              title="Add whole thread to focus"
+            >
+              +Thread
             </button>
           </li>
         ))}
