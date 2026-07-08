@@ -50,6 +50,48 @@ function stableThreadId(memberIds) {
 }
 
 /**
+ * Assembles one thread's full output object (the { threadId, method,
+ * subject, ... } shape) from an already-known, already-grouped set of
+ * member communication rows. Exported so src/db/thread-query.js's
+ * persisted-threadId fast path (src/threading/persist-threads.js writes
+ * threadId/threadMethod back onto rows at ingest time) can reconstruct
+ * the exact same shape from a plain group-by, without recomputing the
+ * header-link/subject-fallback grouping itself -- and without a second,
+ * separately-maintained copy of this assembly logic to drift out of sync
+ * with buildThreads() over time.
+ */
+export function assembleThread(members, method) {
+  const sorted = [...members].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+
+  const participantSet = new Set();
+  for (const m of sorted) {
+    for (const p of participantIdentifiers(m)) participantSet.add(p);
+  }
+
+  const timestamps = sorted.map((m) => m.timestamp).filter((t) => typeof t === 'number');
+  const dateRange = {
+    start: timestamps.length ? Math.min(...timestamps) : null,
+    end: timestamps.length ? Math.max(...timestamps) : null,
+  };
+
+  return {
+    threadId: stableThreadId(sorted.map((m) => m.id)),
+    method,
+    subject: sorted[0]?.subject ?? null,
+    normalizedSubject: normalizeSubject(sorted[0]?.subject),
+    participants: [...participantSet],
+    dateRange,
+    messageCount: sorted.length,
+    members: sorted.map((m) => ({
+      communicationId: m.id,
+      datasetId: m.datasetId,
+      timestamp: m.timestamp,
+      subject: m.subject,
+    })),
+  };
+}
+
+/**
  * Groups a flat array of communication rows (as returned by
  * src/db/query.js's listCommunications/getCommunication, each with a
  * `participants` array attached) into threads, using two signals:
@@ -133,36 +175,9 @@ export function buildThreads(communications) {
   const threads = [];
   for (const [root, indices] of componentsByRoot) {
     const isHeaderThread = headerRoots.has(root);
-    const members = indices
-      .map((i) => communications[i])
-      .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
-
-    const participantSet = new Set();
-    for (const m of members) {
-      for (const p of participantIdentifiers(m)) participantSet.add(p);
-    }
-
-    const timestamps = members.map((m) => m.timestamp).filter((t) => typeof t === 'number');
-    const dateRange = {
-      start: timestamps.length ? Math.min(...timestamps) : null,
-      end: timestamps.length ? Math.max(...timestamps) : null,
-    };
-
-    threads.push({
-      threadId: stableThreadId(members.map((m) => m.id)),
-      method: isHeaderThread ? 'header' : members.length > 1 ? 'subject-fallback' : 'singleton',
-      subject: members[0]?.subject ?? null,
-      normalizedSubject: normalizeSubject(members[0]?.subject),
-      participants: [...participantSet],
-      dateRange,
-      messageCount: members.length,
-      members: members.map((m) => ({
-        communicationId: m.id,
-        datasetId: m.datasetId,
-        timestamp: m.timestamp,
-        subject: m.subject,
-      })),
-    });
+    const members = indices.map((i) => communications[i]);
+    const method = isHeaderThread ? 'header' : members.length > 1 ? 'subject-fallback' : 'singleton';
+    threads.push(assembleThread(members, method));
   }
 
   threads.sort((a, b) => (a.dateRange.start ?? 0) - (b.dateRange.start ?? 0));

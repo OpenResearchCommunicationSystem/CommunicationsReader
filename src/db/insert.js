@@ -1,4 +1,12 @@
 import { mapEmailMessageToCommunication } from './map-email.js';
+import { indexCommunicationText } from '../search/token-index.js';
+
+// Messages are committed in batches rather than one all-or-nothing
+// transaction, so an interruption (the government laptop losing power
+// or being forced to sleep mid-import, its actual real-world operating
+// constraint) never loses more than one batch's worth of work -- see
+// insertImportResult()'s resumability design below.
+const IMPORT_BATCH_SIZE = 500;
 
 // Dedup policy (the reason this file looks the way it does):
 //
@@ -63,6 +71,21 @@ function getStatements(db) {
       INSERT INTO attachments (communicationId, filename, size, mimeType, savedPath, contentHash)
       VALUES (@communicationId, @filename, @size, @mimeType, @savedPath, @contentHash)
     `),
+    getImportProgress: db.prepare(`SELECT * FROM import_progress WHERE archiveSha256 = ?`),
+    upsertImportProgressStart: db.prepare(`
+      INSERT INTO import_progress (archiveSha256, datasetId, lastProcessedIndex, totalCount, status, updatedAt)
+      VALUES (@archiveSha256, @datasetId, -1, @totalCount, 'in_progress', @updatedAt)
+      ON CONFLICT(archiveSha256) DO UPDATE SET
+        datasetId = excluded.datasetId, lastProcessedIndex = -1, totalCount = excluded.totalCount,
+        status = 'in_progress', updatedAt = excluded.updatedAt
+    `),
+    updateImportProgress: db.prepare(`
+      UPDATE import_progress SET lastProcessedIndex = ?, updatedAt = ? WHERE archiveSha256 = ?
+    `),
+    completeImportProgress: db.prepare(`
+      UPDATE import_progress SET status = 'completed', updatedAt = ? WHERE archiveSha256 = ?
+    `),
+    countCommunicationsForDataset: db.prepare(`SELECT COUNT(*) AS c FROM communications WHERE datasetId = ?`),
   };
 
   statementCache.set(db, cached);
@@ -125,49 +148,103 @@ function insertAttachments(db, communicationId, attachments) {
 
 /**
  * Inserts the full output of parser/index.js's importArchive() as one new
- * dataset. One malformed/impossible message never aborts the whole
- * import -- its failure is recorded in insertFailures and the batch
- * continues, mirroring importArchive()'s own defensive per-message
- * handling.
+ * dataset (or continues an interrupted one -- see below). One malformed/
+ * impossible message never aborts the batch -- its failure is recorded in
+ * insertFailures and the batch continues, mirroring importArchive()'s own
+ * defensive per-message handling.
  *
- * meta: { sourceType, originalPath, label?, importerVersion?, attachmentsDir? }
+ * Commits happen in batches of IMPORT_BATCH_SIZE, not one all-or-nothing
+ * transaction: if the process is interrupted mid-import, only the
+ * in-progress batch is lost, not everything already committed.
+ *
+ * Resumability: pass meta.archiveSha256 (electron/main.js already computes
+ * this for the S2 audit log) to enable it. On a fresh archive, a new
+ * import_progress row is created and updated after every committed batch.
+ * If the SAME archive hash is passed again while its import_progress
+ * status is still 'in_progress' (the prior run never reached the end --
+ * process died, laptop lost power, etc.), this resumes from the last
+ * committed batch boundary into the SAME dataset row, re-parsing the
+ * archive (parsing itself isn't checkpointed -- it's comparatively fast
+ * next to insert+extract+OCR) but skipping every message index already
+ * committed. Once status is 'completed', re-passing that hash is treated
+ * as an intentional fresh re-import (a new dataset), not a resume --
+ * this app already supports "the same archive imported twice" as a
+ * normal, expected case (see the dedup policy comment above).
+ *
+ * meta: { sourceType, originalPath, label?, importerVersion?,
+ * attachmentsDir?, archiveSha256? }
  *
  * Returns { datasetId, insertedCount, insertFailures }.
  */
 export function insertImportResult(db, importResult, meta) {
-  const datasetId = insertDataset(db, {
-    sourceType: meta.sourceType,
-    label: meta.label,
-    originalPath: meta.originalPath,
-    containerType: importResult.containerType,
-    succeededCount: importResult.summary.succeeded,
-    failedCount: importResult.summary.failed,
-    totalCount: importResult.summary.total,
-    note: importResult.note,
-    importerVersion: meta.importerVersion,
-    attachmentsDir: meta.attachmentsDir,
-  });
+  const stmts = getStatements(db);
+  const archiveSha256 = meta.archiveSha256 ?? null;
+  const messages = importResult.messages;
+
+  const existingProgress = archiveSha256 ? stmts.getImportProgress.get(archiveSha256) : null;
+  const resuming = Boolean(existingProgress && existingProgress.status === 'in_progress');
+
+  let datasetId;
+  let startIndex;
+  if (resuming) {
+    datasetId = existingProgress.datasetId;
+    startIndex = existingProgress.lastProcessedIndex + 1;
+  } else {
+    datasetId = insertDataset(db, {
+      sourceType: meta.sourceType,
+      label: meta.label,
+      originalPath: meta.originalPath,
+      containerType: importResult.containerType,
+      succeededCount: importResult.summary.succeeded,
+      failedCount: importResult.summary.failed,
+      totalCount: importResult.summary.total,
+      note: importResult.note,
+      importerVersion: meta.importerVersion,
+      attachmentsDir: meta.attachmentsDir,
+    });
+    startIndex = 0;
+    if (archiveSha256) {
+      stmts.upsertImportProgressStart.run({
+        archiveSha256,
+        datasetId,
+        totalCount: messages.length,
+        updatedAt: Date.now(),
+      });
+    }
+  }
 
   const insertFailures = [];
-  let insertedCount = 0;
+  let insertedCount = resuming ? stmts.countCommunicationsForDataset.get(datasetId).c : 0;
 
-  db.exec('BEGIN');
-  try {
-    for (const message of importResult.messages) {
-      try {
-        const { communication, participants, attachments } = mapEmailMessageToCommunication(message, datasetId);
-        const communicationId = insertCommunication(db, communication);
-        insertParticipants(db, communicationId, participants);
-        insertAttachments(db, communicationId, attachments);
-        insertedCount++;
-      } catch (err) {
-        insertFailures.push({ sourceInfo: message.sourceInfo, error: err.message });
+  for (let batchStart = startIndex; batchStart < messages.length; batchStart += IMPORT_BATCH_SIZE) {
+    const batchEnd = Math.min(batchStart + IMPORT_BATCH_SIZE, messages.length);
+    db.exec('BEGIN');
+    try {
+      for (let i = batchStart; i < batchEnd; i++) {
+        const message = messages[i];
+        try {
+          const { communication, participants, attachments } = mapEmailMessageToCommunication(message, datasetId);
+          const communicationId = insertCommunication(db, communication);
+          insertParticipants(db, communicationId, participants);
+          insertAttachments(db, communicationId, attachments);
+          indexCommunicationText(db, { id: communicationId, ...communication });
+          insertedCount++;
+        } catch (err) {
+          insertFailures.push({ sourceInfo: message.sourceInfo, error: err.message });
+        }
       }
+      if (archiveSha256) {
+        stmts.updateImportProgress.run(batchEnd - 1, Date.now(), archiveSha256);
+      }
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
     }
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
+  }
+
+  if (archiveSha256) {
+    stmts.completeImportProgress.run(Date.now(), archiveSha256);
   }
 
   return { datasetId, insertedCount, insertFailures };

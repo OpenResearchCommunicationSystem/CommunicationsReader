@@ -3,22 +3,32 @@ import assert from 'node:assert/strict';
 import { openDatabase } from '../src/db/schema.js';
 import { insertDataset } from '../src/db/insert.js';
 import { runSearch } from '../src/search/run-search.js';
+import { indexCommunicationText, indexAttachmentText } from '../src/search/token-index.js';
 
-function insertCommunication(db, datasetId, { subject = null, bodyText = null } = {}) {
+// Indexes alongside the raw insert, same as src/db/insert.js does for a
+// real import -- runSearch's candidate-narrowing only sees a row at all
+// if it's in token_index, so a fixture that skipped this would silently
+// make its own rows unsearchable rather than testing anything real.
+function insertCommunication(db, datasetId, { subject = null, bodyText = null, fromRaw = null, toRaw = null } = {}) {
   const res = db
     .prepare(
-      `INSERT INTO communications (datasetId, sourceType, subject, bodyText, rawHash, normalizedHash, createdAt)
-       VALUES (?, 'email', ?, ?, ?, ?, ?)`
+      `INSERT INTO communications (datasetId, sourceType, subject, bodyText, fromRaw, toRaw, rawHash, normalizedHash, createdAt)
+       VALUES (?, 'email', ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(datasetId, subject, bodyText, `raw-${Math.random()}`, `norm-${Math.random()}`, Date.now());
-  return Number(res.lastInsertRowid);
+    .run(datasetId, subject, bodyText, fromRaw, toRaw, `raw-${Math.random()}`, `norm-${Math.random()}`, Date.now());
+  const id = Number(res.lastInsertRowid);
+  indexCommunicationText(db, { id, subject, bodyText, fromRaw, toRaw });
+  return id;
 }
 
 function insertExtractedAttachment(db, communicationId, extractedText) {
-  db.prepare(
-    `INSERT INTO attachments (communicationId, filename, extractionStatus, extractedText, extractedAt)
-     VALUES (?, 'doc.docx', 'attempted_succeeded', ?, ?)`
-  ).run(communicationId, extractedText, Date.now());
+  const res = db
+    .prepare(
+      `INSERT INTO attachments (communicationId, filename, extractionStatus, extractedText, extractedAt)
+       VALUES (?, 'doc.docx', 'attempted_succeeded', ?, ?)`
+    )
+    .run(communicationId, extractedText, Date.now());
+  indexAttachmentText(db, communicationId, Number(res.lastInsertRowid), extractedText);
 }
 
 test('runSearch finds a matching communication within a dataset', () => {

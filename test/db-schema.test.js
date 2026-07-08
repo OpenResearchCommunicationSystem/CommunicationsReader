@@ -20,6 +20,9 @@ test('schema creates all expected tables and indexes', () => {
   assert.ok(tables.includes('crypto_matches'));
   assert.ok(tables.includes('audit_log'));
   assert.ok(tables.includes('app_meta'));
+  assert.ok(tables.includes('focus_set_members'));
+  assert.ok(tables.includes('token_index'));
+  assert.ok(tables.includes('import_progress'));
 
   const indexes = db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name")
@@ -43,6 +46,11 @@ test('schema creates all expected tables and indexes', () => {
     'idx_crypto_matches_type',
     'idx_audit_log_sequence',
     'idx_audit_log_eventtype',
+    'idx_focus_set_members_communication',
+    'idx_token_index_token',
+    'idx_token_index_communication',
+    'idx_token_index_attachment',
+    'idx_import_progress_archive',
   ]) {
     assert.ok(indexes.includes(idx), `expected index ${idx} to exist`);
   }

@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { runMigrations } from './migrate.js';
 import { backfillNormalizedHash } from './backfill-normalized-hash.js';
+import { backfillTokenIndex } from './backfill-token-index.js';
 
 // SQLite is source-agnostic on purpose: email is the only producer today,
 // but SMS/chat-app/UFDR/Penlink parsers are expected later. `datasets` is
@@ -54,6 +55,7 @@ CREATE TABLE IF NOT EXISTS communications (
   direction          TEXT,
 
   threadId           TEXT,
+  threadMethod       TEXT,
   messageId          TEXT,
   inReplyTo          TEXT,
   referencesJson     TEXT,
@@ -189,6 +191,42 @@ CREATE TABLE IF NOT EXISTS focus_set_members (
   sourceNote        TEXT,
   UNIQUE(communicationId)
 );
+
+-- Hand-rolled inverted index (node:sqlite has no FTS5, and a WASM/FTS5
+-- build was deliberately rejected -- new third-party attack surface on a
+-- tool that processes hostile input by design). One row per word token;
+-- see src/search/token-index.js for how it's populated and
+-- src/search/candidate-narrow.js for how it's queried. attachmentId is
+-- only set for fieldKind='attachment_text' -- lets a re-extraction
+-- (force: true) cleanly delete and rebuild just that attachment's
+-- entries without touching the rest of the communication's index.
+CREATE TABLE IF NOT EXISTS token_index (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  communicationId   INTEGER NOT NULL REFERENCES communications(id) ON DELETE CASCADE,
+  attachmentId      INTEGER REFERENCES attachments(id) ON DELETE CASCADE,
+  fieldKind         TEXT NOT NULL,
+  token             TEXT NOT NULL,
+  tokenPosition     INTEGER NOT NULL
+);
+
+-- One row per source archive ever imported (keyed by the archive's own
+-- sha256, the same hash already computed for the S2 audit log), tracking
+-- how far a batched-commit insert got. Lets electron/main.js's
+-- import-archive handler transparently resume an import interrupted by
+-- the laptop losing power/sleeping mid-way (see src/db/insert.js)
+-- instead of restarting from message 0 and re-doing potentially hours of
+-- work. status='completed' means nothing to resume -- re-importing that
+-- same archive again is just a normal (intentional) re-import, same as
+-- this app already supports for "the same mailbox exported twice".
+CREATE TABLE IF NOT EXISTS import_progress (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  archiveSha256       TEXT NOT NULL UNIQUE,
+  datasetId           INTEGER REFERENCES datasets(id) ON DELETE CASCADE,
+  lastProcessedIndex  INTEGER NOT NULL DEFAULT -1,
+  totalCount          INTEGER,
+  status              TEXT NOT NULL DEFAULT 'in_progress',
+  updatedAt           INTEGER NOT NULL
+);
 `;
 
 // Indexes are deliberately kept OUT of TABLES_SQL and run only after
@@ -226,6 +264,12 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_sequence  ON audit_log(sequenceNumber);
 CREATE INDEX IF NOT EXISTS idx_audit_log_eventtype ON audit_log(eventType);
 
 CREATE INDEX IF NOT EXISTS idx_focus_set_members_communication ON focus_set_members(communicationId);
+
+CREATE INDEX IF NOT EXISTS idx_token_index_token         ON token_index(token);
+CREATE INDEX IF NOT EXISTS idx_token_index_communication  ON token_index(communicationId);
+CREATE INDEX IF NOT EXISTS idx_token_index_attachment     ON token_index(attachmentId);
+
+CREATE INDEX IF NOT EXISTS idx_import_progress_archive ON import_progress(archiveSha256);
 `;
 
 /**
@@ -240,5 +284,6 @@ export function openDatabase(dbPath) {
   runMigrations(db);
   db.exec(INDEXES_SQL);
   backfillNormalizedHash(db);
+  backfillTokenIndex(db);
   return db;
 }

@@ -2,6 +2,7 @@ import { extractAttachmentText } from './attachment-extract.js';
 import { updateAttachmentExtraction } from '../db/extraction-write.js';
 import { terminateOcrWorker } from './ocr.js';
 import { appendEvent } from '../audit/audit-log.js';
+import { indexAttachmentText } from '../search/token-index.js';
 
 /**
  * Runs text extraction over every attachment with extractionStatus =
@@ -21,7 +22,7 @@ export async function runExtraction(db, options = {}) {
   const { datasetIds, force = false } = options;
 
   let sql = `
-    SELECT a.id, a.filename, a.mimeType, a.savedPath
+    SELECT a.id, a.communicationId, a.filename, a.mimeType, a.savedPath
     FROM attachments a
     JOIN communications c ON c.id = a.communicationId
   `;
@@ -58,7 +59,10 @@ export async function runExtraction(db, options = {}) {
       try {
         const result = await extractAttachmentText(row);
         updateAttachmentExtraction(db, row.id, result);
-        if (result.status === 'attempted_succeeded') succeeded++;
+        if (result.status === 'attempted_succeeded') {
+          succeeded++;
+          indexAttachmentText(db, row.communicationId, row.id, result.text);
+        }
         if (result.status === 'attempted_failed') failed++;
         // Quarantine/rejection is forensically significant on its own --
         // logged separately from the extraction_run summary below so a

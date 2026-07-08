@@ -11,9 +11,22 @@ const COLUMN_MIGRATIONS = [
   { table: 'attachments', column: 'contentHash', definition: 'TEXT' },
   { table: 'attachments', column: 'quarantineStatus', definition: "TEXT NOT NULL DEFAULT 'pending'" },
   { table: 'attachments', column: 'quarantineReason', definition: 'TEXT' },
+  { table: 'communications', column: 'threadMethod', definition: 'TEXT' },
 ];
 
+function tableExists(db, table) {
+  return db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table) !== undefined;
+}
+
 function ensureColumn(db, table, column, definition) {
+  // Guard against the target table not existing at all -- real usage
+  // always calls runMigrations() after TABLES_SQL has created every
+  // table, but a test exercising one migration in isolation against a
+  // deliberately minimal fixture (only the one table under test) is a
+  // legitimate scenario too. Nothing to migrate on a table that doesn't
+  // exist yet; CREATE TABLE will define the column fully whenever the
+  // table is eventually created.
+  if (!tableExists(db, table)) return;
   const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
   if (!columns.includes(column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);

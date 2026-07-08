@@ -17,6 +17,7 @@ import { hashFileStreaming } from '../src/parser/hash.js';
 import { appendEvent } from '../src/audit/audit-log.js';
 import { addToFocusSet, removeFromFocusSet, clearFocusSet, listFocusSet } from '../src/db/focus-set.js';
 import { materializeFocusSet } from '../src/db/materialize.js';
+import { persistThreads } from '../src/threading/persist-threads.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -87,11 +88,17 @@ function registerIpcHandlers() {
 
     const importResult = await importArchive({ zipPath, outputAttachmentsDir });
     const sourceType = importResult.containerType === 'mbox' ? 'email-mbox' : 'email-eml';
+    // archiveSha256 makes this resumable: if the app is interrupted
+    // mid-import (the laptop losing power/sleeping) and the investigator
+    // re-imports the exact same file afterward, insertImportResult()
+    // detects the matching in-progress archive hash and continues from
+    // the last committed batch instead of restarting from message 0.
     const inserted = insertImportResult(db, importResult, {
       sourceType,
       originalPath: zipPath,
       label,
       attachmentsDir: outputAttachmentsDir,
+      archiveSha256,
     });
 
     appendEvent(db, {
@@ -111,6 +118,9 @@ function registerIpcHandlers() {
     // later (e.g. after a keyword-list update) via the same functions.
     await runExtraction(db, { datasetIds: [inserted.datasetId] });
     runScan(db, { datasetIds: [inserted.datasetId] });
+    // Whole-DB rebuild (not scoped to this dataset) -- threading can link
+    // messages across datasets, see persistThreads()'s own comment.
+    persistThreads(db);
 
     return {
       datasetId: inserted.datasetId,
