@@ -1,7 +1,7 @@
 {
   "name": "claude-email-analizer",
   "version": "1.0.0",
-  "buildNumber": 4,
+  "buildNumber": 5,
   "description": "Air-gapped, read-only viewer for .eml/.mbox email export archives. Core parsing module (Milestone 1).",
   "type": "module",
   "main": "electron/main.js",
@@ -52,7 +52,7 @@
   "build": {
     "appId": "com.communicationsreader.app",
     "productName": "Communications Reader",
-    "buildVersion": "1.0.0.4",
+    "buildVersion": "1.0.0.5",
     "directories": {
       "output": "release"
     },
