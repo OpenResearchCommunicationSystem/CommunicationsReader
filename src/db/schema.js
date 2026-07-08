@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { runMigrations } from './migrate.js';
+import { backfillNormalizedHash } from './backfill-normalized-hash.js';
 
 // SQLite is source-agnostic on purpose: email is the only producer today,
 // but SMS/chat-app/UFDR/Penlink parsers are expected later. `datasets` is
@@ -180,6 +181,15 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 CREATE INDEX IF NOT EXISTS idx_audit_log_sequence  ON audit_log(sequenceNumber);
 CREATE INDEX IF NOT EXISTS idx_audit_log_eventtype ON audit_log(eventType);
+
+-- Generic key/value store for one-time app-level markers (e.g. "has this
+-- DB already had a particular one-time data backfill applied") that
+-- don't warrant their own dedicated table. See
+-- src/db/backfill-normalized-hash.js for the first consumer.
+CREATE TABLE IF NOT EXISTS app_meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT
+);
 `;
 
 /**
@@ -191,5 +201,6 @@ export function openDatabase(dbPath) {
   const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA_SQL);
   runMigrations(db);
+  backfillNormalizedHash(db);
   return db;
 }

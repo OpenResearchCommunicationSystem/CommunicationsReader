@@ -15,6 +15,7 @@ test('schema creates all expected tables and indexes', () => {
   assert.ok(tables.includes('attachments'));
   assert.ok(tables.includes('crypto_matches'));
   assert.ok(tables.includes('audit_log'));
+  assert.ok(tables.includes('app_meta'));
 
   const indexes = db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name")

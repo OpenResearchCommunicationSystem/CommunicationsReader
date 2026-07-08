@@ -48,3 +48,14 @@ test('hashFileStreaming matches sha256 of the same bytes computed in-memory', as
 test('hashFileStreaming rejects (never throws synchronously) on a missing file', async () => {
   await assert.rejects(() => hashFileStreaming('/definitely/does/not/exist.zip'));
 });
+
+// Regression guard for a real, previously-shipped bug: computeNormalizedHash
+// used to join its parts with a literal NUL byte instead of a space --
+// invisible in every editor and in `git diff` (which just shows the file as
+// "Binary files differ"), discovered 2026-07-08. Asserting against the
+// exact expected space-joined string, rather than just "hash is stable",
+// is what would have caught this the first time.
+test('computeNormalizedHash joins its parts with a literal space, not an invisible byte', () => {
+  const hash = computeNormalizedHash('body text', { subject: 'Subject line', from: 'sender@example.com' });
+  assert.equal(hash, sha256('Subject line sender@example.com body text'));
+});
