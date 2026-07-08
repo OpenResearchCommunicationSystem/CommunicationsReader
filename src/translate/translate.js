@@ -16,16 +16,24 @@ transformersEnv.allowRemoteModels = false;
 
 // Bundled ONNX weights live in models/translation/<code>/ (see
 // scripts/fetch-translation-models.mjs), asarUnpack'd in package.json the
-// same way tesseract.js-core is. Unlike ocr.js's tessdata cache, this is a
-// read-only asset with nothing to copy/merge at runtime, so no workspace-
-// writable cache dir is needed here -- Electron's asar fs shim transparently
-// redirects reads for an asarUnpack'd path to its real on-disk location.
-// NOT YET CONFIRMED against a packaged build, though (tesseract.js-core hit
-// a real packaging bug here once already -- see project notes) -- must be
-// verified by actually launching the packaged .exe, not assumed from this
-// working in dev.
+// same way tesseract.js-core is. Confirmed a real packaging bug here (same
+// SHAPE as the one ocr.js's TESSDATA_CACHE_DIR comment describes, hit
+// again despite that precedent): Electron's fs shim only redirects
+// app.asar/... reads to the real app.asar.unpacked/... location for calls
+// that go through Node's own fs module, which it monkey-patches --
+// onnxruntime-node's native addon opens the .onnx file itself via the OS's
+// file APIs directly, bypassing that patch entirely, so a path computed
+// as if still inside the asar fails with "File doesn't exist" even though
+// asarUnpack genuinely copied the file to a real location on disk.
+// Confirmed via ELECTRON_RUN_AS_NODE against an actual packaged build, not
+// assumed from working in dev. Fix: rewrite the computed path's
+// app.asar segment to app.asar.unpacked explicitly -- a no-op when not
+// running from inside a packed asar (dev, tests, the CLI).
 function modelDir(code) {
-  return path.join(here, '..', '..', 'models', 'translation', code);
+  const dir = path.join(here, '..', '..', 'models', 'translation', code);
+  const asarSegment = `${path.sep}app.asar${path.sep}`;
+  const unpackedSegment = `${path.sep}app.asar.unpacked${path.sep}`;
+  return dir.includes(asarSegment) ? dir.split(asarSegment).join(unpackedSegment) : dir;
 }
 
 // English is deliberately not a source language: every language here
