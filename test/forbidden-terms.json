@@ -1,0 +1,7 @@
+{
+  "_comment": "sha256 hashes (of the lowercased term) of known case-specific/leak-site terms that must never appear in plaintext anywhere in this repo. See test/forbidden-terms.test.js -- the actual terms are never written here, only their hashes.",
+  "sha256": [
+    "4dfb807573cb5e7ee958ac31a7633ce1a7ff39190a5807acf556c2a012bfa37d",
+    "8b26dc3b184e18279bbb91fda1b96c828d350960c3a323e34be2eed20ded78d5"
+  ]
+}
