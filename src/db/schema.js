@@ -10,7 +10,11 @@ import { backfillNormalizedHash } from './backfill-normalized-hash.js';
 // non-email sources, and `sourceSpecific` is a JSON catch-all for fields
 // that don't earn a real column. See src/db/insert.js for the dedup policy
 // this schema is designed around.
-const SCHEMA_SQL = `
+// Table definitions only -- no CREATE INDEX here. Indexes live in
+// INDEXES_SQL below and run AFTER runMigrations(), not as part of this
+// block -- see the comment on INDEXES_SQL for why that split is load-
+// bearing, not stylistic.
+const TABLES_SQL = `
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
@@ -66,12 +70,6 @@ CREATE TABLE IF NOT EXISTS communications (
   createdAt          INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_communications_dataset   ON communications(datasetId);
-CREATE INDEX IF NOT EXISTS idx_communications_rawhash   ON communications(rawHash);
-CREATE INDEX IF NOT EXISTS idx_communications_normhash  ON communications(normalizedHash);
-CREATE INDEX IF NOT EXISTS idx_communications_timestamp ON communications(timestamp);
-CREATE INDEX IF NOT EXISTS idx_communications_threadid  ON communications(threadId);
-
 CREATE TABLE IF NOT EXISTS participants (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   communicationId   INTEGER NOT NULL REFERENCES communications(id) ON DELETE CASCADE,
@@ -80,9 +78,6 @@ CREATE TABLE IF NOT EXISTS participants (
   displayName       TEXT,
   sortOrder         INTEGER NOT NULL DEFAULT 0
 );
-
-CREATE INDEX IF NOT EXISTS idx_participants_communication ON participants(communicationId);
-CREATE INDEX IF NOT EXISTS idx_participants_identifier    ON participants(identifier);
 
 -- extractionStatus is one of: 'not_attempted' (unsupported type, e.g.
 -- legacy .doc/video -- also the pre-pipeline default), 'attempted_failed',
@@ -130,11 +125,6 @@ CREATE TABLE IF NOT EXISTS attachments (
   quarantineReason  TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_attachments_communication    ON attachments(communicationId);
-CREATE INDEX IF NOT EXISTS idx_attachments_extractionstatus ON attachments(extractionStatus);
-CREATE INDEX IF NOT EXISTS idx_attachments_quarantinestatus ON attachments(quarantineStatus);
-CREATE INDEX IF NOT EXISTS idx_attachments_contenthash      ON attachments(contentHash);
-
 -- One row per detected wallet-address or keyword hit. Exactly one of
 -- communicationId/attachmentId is set per row (a match either came from a
 -- communication's bodyText directly, or from an attachment's
@@ -153,10 +143,6 @@ CREATE TABLE IF NOT EXISTS crypto_matches (
   context           TEXT,
   createdAt         INTEGER NOT NULL
 );
-
-CREATE INDEX IF NOT EXISTS idx_crypto_matches_communication ON crypto_matches(communicationId);
-CREATE INDEX IF NOT EXISTS idx_crypto_matches_attachment    ON crypto_matches(attachmentId);
-CREATE INDEX IF NOT EXISTS idx_crypto_matches_type          ON crypto_matches(matchType);
 
 -- Append-only, hash-chained operational record of ingest/processing/
 -- export events (app_launch, dataset_import_started/completed,
@@ -178,9 +164,6 @@ CREATE TABLE IF NOT EXISTS audit_log (
   prevRecordHash  TEXT,
   recordHash      TEXT NOT NULL
 );
-
-CREATE INDEX IF NOT EXISTS idx_audit_log_sequence  ON audit_log(sequenceNumber);
-CREATE INDEX IF NOT EXISTS idx_audit_log_eventtype ON audit_log(eventType);
 
 -- Generic key/value store for one-time app-level markers (e.g. "has this
 -- DB already had a particular one-time data backfill applied") that
@@ -206,6 +189,41 @@ CREATE TABLE IF NOT EXISTS focus_set_members (
   sourceNote        TEXT,
   UNIQUE(communicationId)
 );
+`;
+
+// Indexes are deliberately kept OUT of TABLES_SQL and run only after
+// runMigrations() -- confirmed as a real regression, not a theoretical
+// one: on a DB created by a build before S1 (contentHash/quarantineStatus/
+// quarantineReason on attachments), CREATE TABLE IF NOT EXISTS is a
+// no-op against the already-existing attachments table, so those
+// columns don't exist yet at this point -- if the CREATE INDEX for them
+// ran here, "no such column: quarantineStatus" would abort the whole
+// exec() before runMigrations() ever got a chance to add the column.
+// Every index below is safe to (re)create idempotently once its
+// column(s) are guaranteed to exist, whether that's because the table
+// was just created fresh (TABLES_SQL) or because a migration just added
+// the column to a pre-existing table (runMigrations()).
+const INDEXES_SQL = `
+CREATE INDEX IF NOT EXISTS idx_communications_dataset   ON communications(datasetId);
+CREATE INDEX IF NOT EXISTS idx_communications_rawhash   ON communications(rawHash);
+CREATE INDEX IF NOT EXISTS idx_communications_normhash  ON communications(normalizedHash);
+CREATE INDEX IF NOT EXISTS idx_communications_timestamp ON communications(timestamp);
+CREATE INDEX IF NOT EXISTS idx_communications_threadid  ON communications(threadId);
+
+CREATE INDEX IF NOT EXISTS idx_participants_communication ON participants(communicationId);
+CREATE INDEX IF NOT EXISTS idx_participants_identifier    ON participants(identifier);
+
+CREATE INDEX IF NOT EXISTS idx_attachments_communication    ON attachments(communicationId);
+CREATE INDEX IF NOT EXISTS idx_attachments_extractionstatus ON attachments(extractionStatus);
+CREATE INDEX IF NOT EXISTS idx_attachments_quarantinestatus ON attachments(quarantineStatus);
+CREATE INDEX IF NOT EXISTS idx_attachments_contenthash      ON attachments(contentHash);
+
+CREATE INDEX IF NOT EXISTS idx_crypto_matches_communication ON crypto_matches(communicationId);
+CREATE INDEX IF NOT EXISTS idx_crypto_matches_attachment    ON crypto_matches(attachmentId);
+CREATE INDEX IF NOT EXISTS idx_crypto_matches_type          ON crypto_matches(matchType);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_sequence  ON audit_log(sequenceNumber);
+CREATE INDEX IF NOT EXISTS idx_audit_log_eventtype ON audit_log(eventType);
 
 CREATE INDEX IF NOT EXISTS idx_focus_set_members_communication ON focus_set_members(communicationId);
 `;
@@ -213,12 +231,14 @@ CREATE INDEX IF NOT EXISTS idx_focus_set_members_communication ON focus_set_memb
 /**
  * Opens (creating if necessary) a SQLite database at dbPath and ensures the
  * schema exists. Pass ':memory:' for an ephemeral in-memory DB (used by
- * tests).
+ * tests). Order matters: tables, then migrations (add any column missing
+ * from a pre-existing table), then indexes -- see INDEXES_SQL's comment.
  */
 export function openDatabase(dbPath) {
   const db = new DatabaseSync(dbPath);
-  db.exec(SCHEMA_SQL);
+  db.exec(TABLES_SQL);
   runMigrations(db);
+  db.exec(INDEXES_SQL);
   backfillNormalizedHash(db);
   return db;
 }
