@@ -560,6 +560,56 @@ body {
   color: var(--danger-text);
 }
 
+.translate-control {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.translate-control select {
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+}
+
+.translate-button {
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: white;
+  cursor: pointer;
+}
+
+.translate-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.translated-text {
+  padding: 10px 12px;
+  background: var(--bg-alt);
+  border-radius: 6px;
+  border-left: 3px solid var(--border);
+  white-space: pre-wrap;
+  font-size: 13.5px;
+  line-height: 1.5;
+  max-height: 400px;
+  overflow-y: auto;
+  width: 100%;
+}
+
+.translated-text-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
 /* Focus panel */
 .focus-actions {
   display: flex;

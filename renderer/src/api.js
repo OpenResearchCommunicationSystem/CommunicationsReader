@@ -80,6 +80,32 @@ export async function getAvailableLangs() {
   return { available: MOCK_AVAILABLE_LANGS, defaultLangs: ['eng', 'fas'] };
 }
 
+// Mirrors src/translate/translate.js's AVAILABLE_LANGS for preview mode.
+// Deliberately excludes 'ell' (Greek) -- see that module's comment on why
+// it's not shipped yet, not just omitted from this mock by oversight.
+const MOCK_AVAILABLE_TRANSLATE_LANGS = {
+  ara: 'Arabic',
+  chi_sim: 'Chinese (Simplified)',
+  rus: 'Russian',
+  tur: 'Turkish',
+  fas: 'Farsi',
+};
+
+export async function getAvailableTranslateLangs() {
+  if (hasRealApi) return window.api.getAvailableTranslateLangs();
+  return { available: MOCK_AVAILABLE_TRANSLATE_LANGS };
+}
+
+export async function translateCommunication(communicationId, sourceLang) {
+  if (hasRealApi) return window.api.translateCommunication(communicationId, sourceLang);
+  throw new Error('translateCommunication is only available inside the Electron app');
+}
+
+export async function translateAttachment(attachmentId, sourceLang) {
+  if (hasRealApi) return window.api.translateAttachment(attachmentId, sourceLang);
+  throw new Error('translateAttachment is only available inside the Electron app');
+}
+
 export async function runScan(datasetIds) {
   if (hasRealApi) return window.api.runScan(datasetIds);
   throw new Error('runScan is only available inside the Electron app');

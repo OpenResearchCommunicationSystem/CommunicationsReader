@@ -23,6 +23,17 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const SCAN_ROOTS = ['electron', 'src', 'renderer/src', 'scripts'];
 const THIS_FILE_NAME = 'no-network-primitives.test.js';
 
+// Dev-machine-only tooling that legitimately needs network access, same
+// category as `npm install` itself needing network -- never runs on the
+// investigator's air-gapped machine, never ships in the packaged exe (not
+// listed in package.json's build.files), and is the ONLY way to vendor
+// third-party ONNX model weights that have no npm package (see that
+// script's own header comment and the plan doc's model-bundling section).
+// This is a narrow, explicitly-reasoned exception, not a general carve-out
+// for scripts/ -- any other file in scripts/ is still held to the same
+// zero-network bar as the shipped app.
+const NETWORK_ALLOWED_FILES = new Set(['fetch-translation-models.mjs']);
+
 const FORBIDDEN_PATTERNS = [
   { name: 'fetch(', re: /\bfetch\s*\(/ },
   { name: 'XMLHttpRequest', re: /\bXMLHttpRequest\b/ },
@@ -43,6 +54,7 @@ test('no first-party source file contains a network primitive', () => {
     // contains the forbidden tokens as strings/regexes) doesn't flag
     // itself.
     if (path.basename(filePath) === THIS_FILE_NAME) continue;
+    if (NETWORK_ALLOWED_FILES.has(path.basename(filePath))) continue;
     for (const { name, re } of FORBIDDEN_PATTERNS) {
       if (re.test(content)) {
         violations.push(`${path.relative(repoRoot, filePath)}: contains forbidden pattern "${name}"`);

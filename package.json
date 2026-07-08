@@ -1,7 +1,7 @@
 {
   "name": "claude-email-analizer",
   "version": "1.0.0",
-  "buildNumber": 5,
+  "buildNumber": 6,
   "description": "Air-gapped, read-only viewer for .eml/.mbox email export archives. Core parsing module (Milestone 1).",
   "type": "module",
   "main": "electron/main.js",
@@ -18,6 +18,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
     "@tesseract.js-data/ara": "^1.0.0",
     "@tesseract.js-data/chi_sim": "^1.0.0",
     "@tesseract.js-data/ell": "^1.0.0",
@@ -52,7 +53,7 @@
   "build": {
     "appId": "com.communicationsreader.app",
     "productName": "Communications Reader",
-    "buildVersion": "1.0.0.5",
+    "buildVersion": "1.0.0.6",
     "directories": {
       "output": "release"
     },
@@ -61,12 +62,17 @@
       "src/**",
       "dist/renderer/**",
       "package.json",
+      "models/translation/**",
       "!**/*.test.js"
     ],
     "asarUnpack": [
       "node_modules/tesseract.js/**",
       "node_modules/tesseract.js-core/**",
-      "node_modules/@tesseract.js-data/**"
+      "node_modules/@tesseract.js-data/**",
+      "node_modules/@huggingface/transformers/**",
+      "node_modules/onnxruntime-node/**",
+      "node_modules/onnxruntime-common/**",
+      "models/translation/**"
     ],
     "win": {
       "target": "portable",

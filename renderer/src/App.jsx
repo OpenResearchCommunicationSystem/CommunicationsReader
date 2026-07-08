@@ -27,6 +27,9 @@ export default function App() {
   const [selectedLangs, setSelectedLangs] = useState([]);
   const [reExtractingId, setReExtractingId] = useState(null);
   const [reExtractStatus, setReExtractStatus] = useState({});
+  const [availableTranslateLangs, setAvailableTranslateLangs] = useState(null);
+  const [translatingCommunication, setTranslatingCommunication] = useState(false);
+  const [translatingAttachmentId, setTranslatingAttachmentId] = useState(null);
 
   function loadFocusSet() {
     return api.focusList().then(setFocusSet).catch((err) => setError(err.message));
@@ -41,6 +44,10 @@ export default function App() {
         setAvailableLangs(available);
         setSelectedLangs(defaultLangs);
       })
+      .catch(() => {});
+    api
+      .getAvailableTranslateLangs()
+      .then(({ available }) => setAvailableTranslateLangs(available))
       .catch(() => {});
     loadFocusSet();
   }, []);
@@ -159,6 +166,35 @@ export default function App() {
       setReExtractStatus((prev) => ({ ...prev, [datasetId]: { error: err.message } }));
     } finally {
       setReExtractingId(null);
+    }
+  }
+
+  async function handleTranslateCommunication(communicationId, sourceLang) {
+    setTranslatingCommunication(true);
+    try {
+      await api.translateCommunication(communicationId, sourceLang);
+      // Re-fetch rather than patch local state -- the same "trust the DB,
+      // not an optimistic guess" approach every other mutating action here
+      // already takes (see handleDeleteDataset/handleReExtract).
+      const refreshed = await api.getCommunication(communicationId);
+      setCommunication(refreshed);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setTranslatingCommunication(false);
+    }
+  }
+
+  async function handleTranslateAttachment(attachmentId, sourceLang) {
+    setTranslatingAttachmentId(attachmentId);
+    try {
+      await api.translateAttachment(attachmentId, sourceLang);
+      const refreshed = await api.getCommunication(selectedCommunicationId);
+      setCommunication(refreshed);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setTranslatingAttachmentId(null);
     }
   }
 
@@ -287,7 +323,17 @@ export default function App() {
           focusedIds={focusedIds}
           onAddToFocus={handleAddToFocus}
         />
-        <ReadingPane communication={communication} cryptoMatches={cryptoMatches} onExportAttachment={handleExportAttachment} />
+        <ReadingPane
+          key={communication?.id}
+          communication={communication}
+          cryptoMatches={cryptoMatches}
+          onExportAttachment={handleExportAttachment}
+          availableTranslateLangs={availableTranslateLangs}
+          onTranslateCommunication={handleTranslateCommunication}
+          onTranslateAttachment={handleTranslateAttachment}
+          translatingCommunication={translatingCommunication}
+          translatingAttachmentId={translatingAttachmentId}
+        />
         <FocusPanel
           focusSet={focusSet}
           selectedCommunicationId={selectedCommunicationId}

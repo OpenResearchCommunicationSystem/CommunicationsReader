@@ -69,6 +69,13 @@ CREATE TABLE IF NOT EXISTS communications (
   sourceRef          TEXT,
   sourceSpecific     TEXT,
 
+  -- See the matching comment on attachments below -- same investigator-
+  -- triggered, per-item translation lifecycle, applied here to bodyText.
+  translatedText     TEXT,
+  translatedLang     TEXT,
+  translatedAt       INTEGER,
+  translationMeta    TEXT,
+
   createdAt          INTEGER NOT NULL
 );
 
@@ -124,7 +131,19 @@ CREATE TABLE IF NOT EXISTS attachments (
   extractedAt       INTEGER,
 
   quarantineStatus  TEXT NOT NULL DEFAULT 'pending',
-  quarantineReason  TEXT
+  quarantineReason  TEXT,
+
+  -- Separate lifecycle again, same shape as extractionStatus vs
+  -- quarantineStatus above: translation is investigator-triggered,
+  -- per-item, never automatic (see src/translate/translate-record.js) --
+  -- there's no language-ID model in this codebase to pick a source
+  -- language automatically. translatedAt IS NULL means "never
+  -- translated", not "not translatable" -- unlike extractionStatus there
+  -- is no terminal "unsupported" state here.
+  translatedText    TEXT,
+  translatedLang    TEXT,
+  translatedAt      INTEGER,
+  translationMeta   TEXT
 );
 
 -- One row per detected wallet-address or keyword hit. Exactly one of
@@ -149,7 +168,7 @@ CREATE TABLE IF NOT EXISTS crypto_matches (
 -- Append-only, hash-chained operational record of ingest/processing/
 -- export events (app_launch, dataset_import_started/completed,
 -- extraction_run, scan_run, attachment_quarantined, export_created,
--- materialization_created). See src/audit/audit-log.js for the full
+-- materialization_created, translation_run). See src/audit/audit-log.js for the full
 -- disclaimer this table implies: it is operational record-keeping for
 -- malware containment, case compartmentalization, and the analyst's own
 -- reference -- it is NOT a chain-of-custody or evidentiary system.

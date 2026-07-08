@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 function formatDateTime(ts) {
   if (!ts) return '';
   return new Date(ts).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -16,7 +18,59 @@ const EXTRACTION_LABELS = {
   attempted_succeeded: 'Text extracted',
 };
 
-export default function ReadingPane({ communication, cryptoMatches, onExportAttachment }) {
+// Shared by the message body and each attachment's extracted text --
+// translation is investigator-triggered per item (no language-ID model
+// exists in this codebase to guess a source language, unlike OCR's
+// automatic post-import pass). Local dropdown selection, not lifted to
+// App.jsx state, since it's ephemeral per item; ReadingPane is remounted
+// (via a `key` on communication.id in App.jsx) whenever the selected
+// message changes, so this resets naturally rather than leaking a stale
+// selection across messages.
+function TranslateControl({ availableTranslateLangs, translating, onTranslate, translatedText, translatedLang }) {
+  const codes = Object.keys(availableTranslateLangs || {});
+  const [sourceLang, setSourceLang] = useState(codes[0] || '');
+
+  if (codes.length === 0) return null;
+
+  return (
+    <div className="translate-control">
+      {!translatedText && (
+        <>
+          <select value={sourceLang} onChange={(e) => setSourceLang(e.target.value)} disabled={translating}>
+            {codes.map((code) => (
+              <option key={code} value={code}>{availableTranslateLangs[code]}</option>
+            ))}
+          </select>
+          <button
+            className="translate-button"
+            disabled={translating || !sourceLang}
+            onClick={() => onTranslate(sourceLang)}
+            title="Machine translation, fully offline -- quality varies by language and is not a substitute for a human translator"
+          >
+            {translating ? 'Translating…' : 'Translate from…'}
+          </button>
+        </>
+      )}
+      {translatedText && (
+        <div className="translated-text" dir="auto">
+          <div className="translated-text-label">Machine translation from {availableTranslateLangs[translatedLang] || translatedLang}:</div>
+          {translatedText}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function ReadingPane({
+  communication,
+  cryptoMatches,
+  onExportAttachment,
+  availableTranslateLangs,
+  onTranslateCommunication,
+  onTranslateAttachment,
+  translatingCommunication,
+  translatingAttachmentId,
+}) {
   if (!communication) {
     return (
       <div className="reading-pane">
@@ -55,6 +109,16 @@ export default function ReadingPane({ communication, cryptoMatches, onExportAtta
         )}
       </div>
 
+      {!communication.bodyEmpty && availableTranslateLangs && onTranslateCommunication && (
+        <TranslateControl
+          availableTranslateLangs={availableTranslateLangs}
+          translating={translatingCommunication}
+          onTranslate={(sourceLang) => onTranslateCommunication(communication.id, sourceLang)}
+          translatedText={communication.translatedText}
+          translatedLang={communication.translatedLang}
+        />
+      )}
+
       {communication.attachments && communication.attachments.length > 0 && (
         <div className="attachments-section">
           <h3>Attachments ({communication.attachments.length})</h3>
@@ -80,6 +144,15 @@ export default function ReadingPane({ communication, cryptoMatches, onExportAtta
                 )}
                 {att.extractionStatus === 'attempted_failed' && (
                   <div className="attachment-extraction-error">Extraction failed: {att.extractionError}</div>
+                )}
+                {att.extractionStatus === 'attempted_succeeded' && att.extractedText && availableTranslateLangs && onTranslateAttachment && (
+                  <TranslateControl
+                    availableTranslateLangs={availableTranslateLangs}
+                    translating={translatingAttachmentId === att.id}
+                    onTranslate={(sourceLang) => onTranslateAttachment(att.id, sourceLang)}
+                    translatedText={att.translatedText}
+                    translatedLang={att.translatedLang}
+                  />
                 )}
               </li>
             ))}

@@ -6,3 +6,4 @@ test/fixtures/generated/
 dist/
 release/
 sample-data/
+models/translation/

@@ -12,6 +12,14 @@ const COLUMN_MIGRATIONS = [
   { table: 'attachments', column: 'quarantineStatus', definition: "TEXT NOT NULL DEFAULT 'pending'" },
   { table: 'attachments', column: 'quarantineReason', definition: 'TEXT' },
   { table: 'communications', column: 'threadMethod', definition: 'TEXT' },
+  { table: 'communications', column: 'translatedText', definition: 'TEXT' },
+  { table: 'communications', column: 'translatedLang', definition: 'TEXT' },
+  { table: 'communications', column: 'translatedAt', definition: 'INTEGER' },
+  { table: 'communications', column: 'translationMeta', definition: 'TEXT' },
+  { table: 'attachments', column: 'translatedText', definition: 'TEXT' },
+  { table: 'attachments', column: 'translatedLang', definition: 'TEXT' },
+  { table: 'attachments', column: 'translatedAt', definition: 'INTEGER' },
+  { table: 'attachments', column: 'translationMeta', definition: 'TEXT' },
 ];
 
 function tableExists(db, table) {

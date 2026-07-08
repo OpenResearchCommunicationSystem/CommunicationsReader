@@ -33,11 +33,44 @@ test('runMigrations adds missing attachments columns to a pre-migration DB witho
   assert.ok(columns.includes('contentHash'));
   assert.ok(columns.includes('quarantineStatus'));
   assert.ok(columns.includes('quarantineReason'));
+  assert.ok(columns.includes('translatedText'));
+  assert.ok(columns.includes('translatedLang'));
+  assert.ok(columns.includes('translatedAt'));
+  assert.ok(columns.includes('translationMeta'));
 
   const row = db.prepare(`SELECT * FROM attachments WHERE filename = 'old-row.bin'`).get();
   assert.equal(row.contentHash, null);
   assert.equal(row.quarantineStatus, 'pending');
   assert.equal(row.quarantineReason, null);
+  assert.equal(row.translatedText, null);
+
+  db.close();
+});
+
+test('runMigrations adds translation columns to a pre-migration communications table', () => {
+  const db = new DatabaseSync(':memory:');
+  db.exec(`
+    CREATE TABLE communications (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      datasetId   INTEGER NOT NULL,
+      sourceType  TEXT NOT NULL,
+      bodyText    TEXT,
+      rawHash     TEXT NOT NULL,
+      createdAt   INTEGER NOT NULL
+    )
+  `);
+  db.exec(`INSERT INTO communications (datasetId, sourceType, bodyText, rawHash, createdAt) VALUES (1, 'email', 'hi', 'x', 0)`);
+
+  runMigrations(db);
+
+  const columns = db.prepare('PRAGMA table_info(communications)').all().map((c) => c.name);
+  assert.ok(columns.includes('translatedText'));
+  assert.ok(columns.includes('translatedLang'));
+  assert.ok(columns.includes('translatedAt'));
+  assert.ok(columns.includes('translationMeta'));
+
+  const row = db.prepare(`SELECT * FROM communications WHERE bodyText = 'hi'`).get();
+  assert.equal(row.translatedText, null);
 
   db.close();
 });

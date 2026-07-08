@@ -19,6 +19,8 @@ import { deleteDataset } from '../src/db/delete-dataset.js';
 import { importArchive } from '../src/parser/index.js';
 import { runExtraction } from '../src/extract/run-extraction.js';
 import { AVAILABLE_LANGS, DEFAULT_LANGS } from '../src/extract/ocr.js';
+import { AVAILABLE_LANGS as AVAILABLE_TRANSLATE_LANGS } from '../src/translate/translate.js';
+import { translateCommunication, translateAttachment } from '../src/translate/translate-record.js';
 import { runScan } from '../src/crypto-detect/run-scan.js';
 import { runSearch } from '../src/search/run-search.js';
 import { hashFileStreaming } from '../src/parser/hash.js';
@@ -285,6 +287,20 @@ function registerIpcHandlers() {
   // default, e.g. re-running a dataset once it's clear its images are in
   // Arabic rather than Farsi.
   ipcMain.handle('run-extraction', (_event, options) => runExtraction(db, options ?? {}));
+
+  ipcMain.handle('get-available-translate-langs', () => ({ available: AVAILABLE_TRANSLATE_LANGS }));
+
+  // On-demand only, one item at a time -- unlike OCR, translation has no
+  // way to auto-detect a source language (no language-ID model exists in
+  // this codebase), so it can never run automatically at import time; the
+  // investigator picks a language explicitly per message/attachment (see
+  // src/translate/translate-record.js).
+  ipcMain.handle('translate-communication', (_event, { communicationId, sourceLang }) =>
+    translateCommunication(db, communicationId, sourceLang)
+  );
+  ipcMain.handle('translate-attachment', (_event, { attachmentId, sourceLang }) =>
+    translateAttachment(db, attachmentId, sourceLang)
+  );
 
   ipcMain.handle('run-scan', (_event, datasetIds) => runScan(db, { datasetIds }));
 
