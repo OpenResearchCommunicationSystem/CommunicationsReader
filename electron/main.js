@@ -1,16 +1,24 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { openDatabase } from '../src/db/schema.js';
+import { readRememberedWorkspace, rememberWorkspace } from '../src/workspace/resolve-workspace.js';
+import {
+  workspaceDbPath,
+  workspaceAttachmentsDir,
+  workspaceTessdataCacheDir,
+  looksLikeExistingWorkspace,
+} from '../src/workspace/workspace-paths.js';
 import { insertImportResult } from '../src/db/insert.js';
 import { listDatasets, listCommunications, getCommunication as dbGetCommunication, getCryptoMatches } from '../src/db/query.js';
 import { getThreadsForDatasets } from '../src/db/thread-query.js';
 import { deleteDataset } from '../src/db/delete-dataset.js';
 import { importArchive } from '../src/parser/index.js';
 import { runExtraction } from '../src/extract/run-extraction.js';
+import { AVAILABLE_LANGS, DEFAULT_LANGS } from '../src/extract/ocr.js';
 import { runScan } from '../src/crypto-detect/run-scan.js';
 import { runSearch } from '../src/search/run-search.js';
 import { hashFileStreaming } from '../src/parser/hash.js';
@@ -30,19 +38,96 @@ const pkg = JSON.parse(readFileSync(path.join(here, '..', 'package.json'), 'utf8
 
 let db;
 let attachmentsRootDir;
+let currentWorkspaceDir;
 
-function initStorage() {
-  const userData = app.getPath('userData');
-  const dbPath = path.join(userData, 'communications.db');
-  attachmentsRootDir = path.join(userData, 'attachments');
+/**
+ * Asks where to keep the case workspace (database + attachments + OCR
+ * language cache -- see src/workspace/workspace-paths.js) if nothing was
+ * remembered from last launch, or the remembered folder's drive isn't
+ * currently reachable (unplugged external, or the machine was reset --
+ * see the S5 VM-build workflow, where the host machine itself is
+ * periodically disposable). Defaults to userData if the dialog is
+ * cancelled, so a bare install still works with zero clicks, but the
+ * whole point of asking is to let the case live next to its source
+ * archives on the investigator's own case drive instead of being
+ * trapped inside one machine's app-install folder.
+ *
+ * An install from before workspaces existed already has a
+ * communications.db directly in userData -- that counts as "remembered"
+ * too (and is recorded as such so future launches don't re-check the
+ * filesystem for it), so upgrading never silently orphans real casework
+ * behind a prompt for a new, empty folder.
+ */
+async function resolveWorkspaceDir(userDataDir) {
+  const remembered = readRememberedWorkspace(userDataDir);
+  if (remembered) return remembered;
+
+  if (looksLikeExistingWorkspace(userDataDir)) {
+    rememberWorkspace(userDataDir, userDataDir);
+    return userDataDir;
+  }
+
+  const result = await dialog.showOpenDialog({
+    title: 'Choose (or create) a folder for the case database',
+    message:
+      'This folder holds the search index, extracted text, and audit log. Pick a location on your case drive so it travels with your source files, not the app install.',
+    properties: ['openDirectory', 'createDirectory'],
+    defaultPath: userDataDir,
+  });
+  const chosen = result.canceled || result.filePaths.length === 0 ? userDataDir : result.filePaths[0];
+  rememberWorkspace(userDataDir, chosen);
+  return chosen;
+}
+
+function initStorage(workspaceDir) {
+  currentWorkspaceDir = workspaceDir;
+  const dbPath = workspaceDbPath(workspaceDir);
+  attachmentsRootDir = workspaceAttachmentsDir(workspaceDir);
   // src/extract/ocr.js's traineddata cache must live outside the
   // (read-only, once packaged) app directory -- see its own comment.
-  process.env.TESSDATA_CACHE_DIR = path.join(userData, 'tessdata-cache');
+  process.env.TESSDATA_CACHE_DIR = workspaceTessdataCacheDir(workspaceDir);
   db = openDatabase(dbPath);
   appendEvent(db, {
     eventType: 'app_launch',
-    payload: { version: pkg.version, buildNumber: pkg.buildNumber, buildVersion: pkg.build?.buildVersion },
+    payload: { version: pkg.version, buildNumber: pkg.buildNumber, buildVersion: pkg.build?.buildVersion, workspaceDir },
   });
+}
+
+/**
+ * Lets the investigator point the app at a different case workspace
+ * later (e.g. switching to a different case's external drive). Simplest
+ * safe implementation: remember the new folder, then relaunch the whole
+ * app -- every renderer data source (datasets, threads, focus set) is
+ * already fetched fresh on mount, so a clean relaunch is far less risky
+ * than hand-rolling a live in-place database swap while windows are open.
+ */
+function registerWorkspaceMenu() {
+  const template = [
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Change Workspace Folder…',
+          click: async () => {
+            const userDataDir = app.getPath('userData');
+            const result = await dialog.showOpenDialog({
+              title: 'Choose (or create) a folder for the case database',
+              properties: ['openDirectory', 'createDirectory'],
+              defaultPath: userDataDir,
+            });
+            if (result.canceled || result.filePaths.length === 0) return;
+            rememberWorkspace(userDataDir, result.filePaths[0]);
+            if (db) db.close();
+            app.relaunch();
+            app.exit();
+          },
+        },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 function registerIpcHandlers() {
@@ -50,6 +135,7 @@ function registerIpcHandlers() {
     version: pkg.version,
     buildNumber: pkg.buildNumber,
     buildVersion: pkg.build?.buildVersion,
+    workspaceDir: currentWorkspaceDir,
   }));
 
   ipcMain.handle('list-datasets', () => listDatasets(db));
@@ -130,30 +216,45 @@ function registerIpcHandlers() {
     };
   });
 
-  ipcMain.handle('run-extraction', (_event, datasetIds) => runExtraction(db, { datasetIds }));
+  ipcMain.handle('get-available-langs', () => ({ available: AVAILABLE_LANGS, defaultLangs: DEFAULT_LANGS }));
+
+  // options: { datasetIds?, force?, langs? } -- langs lets the
+  // investigator pick which Tesseract languages to OCR this run against
+  // (see ocr.js's AVAILABLE_LANGS) instead of always using the eng+fas
+  // default, e.g. re-running a dataset once it's clear its images are in
+  // Arabic rather than Farsi.
+  ipcMain.handle('run-extraction', (_event, options) => runExtraction(db, options ?? {}));
 
   ipcMain.handle('run-scan', (_event, datasetIds) => runScan(db, { datasetIds }));
 
   ipcMain.handle('run-search', (_event, { datasetIds, query }) => runSearch(db, { datasetIds, query }));
 
+  // Deliberately never copies the attachment's original bytes out of the
+  // app -- only the already-extracted/OCR'd text. Raw-file export was
+  // removed on request: the user judged handing back a still-live,
+  // potentially malware-laden original file too much liability for a
+  // non-forensic-background investigator to take on personally.
   ipcMain.handle('export-attachment', async (_event, attachmentId) => {
-    const row = db.prepare('SELECT filename, savedPath, contentHash FROM attachments WHERE id = ?').get(attachmentId);
-    if (!row || !row.savedPath) {
-      throw new Error('This attachment has no saved file to export.');
+    const row = db
+      .prepare('SELECT filename, extractedText, extractionStatus, contentHash FROM attachments WHERE id = ?')
+      .get(attachmentId);
+    if (!row || row.extractionStatus !== 'attempted_succeeded' || !row.extractedText) {
+      throw new Error('No extracted text is available for this attachment. Raw-file export is disabled.');
     }
 
+    const baseName = (row.filename || 'attachment').replace(/\.[^./\\]+$/, '');
     const result = await dialog.showSaveDialog({
-      title: 'Export attachment',
-      defaultPath: row.filename || 'attachment',
+      title: 'Export extracted text',
+      defaultPath: `${baseName}.extracted.txt`,
     });
     if (result.canceled || !result.filePath) return null;
 
-    await fs.copyFile(row.savedPath, result.filePath);
+    await fs.writeFile(result.filePath, row.extractedText, 'utf8');
 
     appendEvent(db, {
       eventType: 'export_created',
       subjectRef: String(attachmentId),
-      payload: { attachmentId, filename: row.filename, contentHash: row.contentHash, exportedTo: result.filePath },
+      payload: { attachmentId, filename: row.filename, contentHash: row.contentHash, exportedTo: result.filePath, exportKind: 'extracted_text' },
     });
 
     return result.filePath;
@@ -220,8 +321,10 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(() => {
-  initStorage();
+app.whenReady().then(async () => {
+  const workspaceDir = await resolveWorkspaceDir(app.getPath('userData'));
+  initStorage(workspaceDir);
+  registerWorkspaceMenu();
   registerIpcHandlers();
   createWindow();
 

@@ -1,4 +1,5 @@
 import { extractAttachmentText } from './attachment-extract.js';
+import { classifyAttachment } from './index.js';
 import { updateAttachmentExtraction } from '../db/extraction-write.js';
 import { terminateOcrWorker } from './ocr.js';
 import { appendEvent } from '../audit/audit-log.js';
@@ -12,17 +13,32 @@ import { indexAttachmentText } from '../search/token-index.js';
  * attachment's failure -- mirrors importArchive()'s defensive per-item
  * loop.
  *
- * options: { datasetIds?: number[], force?: boolean } -- force re-runs
- * extraction even for attachments already attempted (e.g. after a library
- * upgrade).
+ * Byte-identical attachments (the same signature image or contract PDF
+ * forwarded to many recipients -- extremely common in real mailboxes) are
+ * extracted/OCR'd only once per batch: rows are grouped by contentHash +
+ * classified kind (not contentHash alone -- two rows can share bytes but
+ * claim different types via a mislabeled filename/mimeType, and
+ * classifyAttachment()'s kind is what actually selects the extractor and
+ * gates the magic-byte verification, so mixing kinds here would let a
+ * mislabeled row silently inherit another row's verification result).
+ * Every row in a group still gets its own DB write, quarantine audit
+ * event, and search-index entry -- only the expensive
+ * extractAttachmentText() call itself is shared, mirroring insert.js's
+ * "never silently drop a row" dedup policy.
  *
- * Returns { attempted, succeeded, failed }.
+ * options: { datasetIds?: number[], force?: boolean, langs?: string[] } --
+ * force re-runs extraction even for attachments already attempted (e.g.
+ * after a library upgrade). langs selects which Tesseract languages OCR
+ * runs against for this call (see ocr.js's AVAILABLE_LANGS); defaults to
+ * ocr.js's own DEFAULT_LANGS when omitted. Non-image extractors ignore it.
+ *
+ * Returns { attempted, succeeded, failed, deduped }.
  */
 export async function runExtraction(db, options = {}) {
-  const { datasetIds, force = false } = options;
+  const { datasetIds, force = false, langs } = options;
 
   let sql = `
-    SELECT a.id, a.communicationId, a.filename, a.mimeType, a.savedPath
+    SELECT a.id, a.communicationId, a.filename, a.mimeType, a.savedPath, a.contentHash
     FROM attachments a
     JOIN communications c ON c.id = a.communicationId
   `;
@@ -50,15 +66,37 @@ export async function runExtraction(db, options = {}) {
 
   const rows = db.prepare(sql).all(...params);
 
+  const groups = new Map();
+  for (const row of rows) {
+    const kind = classifyAttachment(row);
+    const key = row.contentHash ? `${row.contentHash}::${kind}` : `row:${row.id}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+
   let succeeded = 0;
   let failed = 0;
   let quarantined = 0;
+  let deduped = 0;
 
   try {
-    for (const row of rows) {
+    for (const group of groups.values()) {
+      const [representative] = group;
+      let result;
       try {
-        const result = await extractAttachmentText(row);
-        updateAttachmentExtraction(db, row.id, result);
+        result = await extractAttachmentText(representative, { langs });
+      } catch (err) {
+        // extractAttachmentText contracts to never throw, but guard the
+        // batch loop anyway (belt-and-suspenders, same as insert.js).
+        result = { status: 'attempted_failed', method: null, text: null, error: err.message, meta: null };
+      }
+
+      for (const row of group) {
+        const isDuplicate = row !== representative;
+        const writtenResult = isDuplicate
+          ? { ...result, meta: { ...(result.meta ?? {}), dedupedFromAttachmentId: representative.id } }
+          : result;
+        updateAttachmentExtraction(db, row.id, writtenResult);
         if (result.status === 'attempted_succeeded') {
           succeeded++;
           indexAttachmentText(db, row.communicationId, row.id, result.text);
@@ -76,17 +114,7 @@ export async function runExtraction(db, options = {}) {
             payload: { attachmentId: row.id, filename: row.filename, quarantineReason: result.quarantineReason },
           });
         }
-      } catch (err) {
-        // extractAttachmentText contracts to never throw, but guard the
-        // batch loop anyway (belt-and-suspenders, same as insert.js).
-        updateAttachmentExtraction(db, row.id, {
-          status: 'attempted_failed',
-          method: null,
-          text: null,
-          error: err.message,
-          meta: null,
-        });
-        failed++;
+        if (isDuplicate) deduped++;
       }
     }
   } finally {
@@ -96,8 +124,8 @@ export async function runExtraction(db, options = {}) {
   appendEvent(db, {
     eventType: 'extraction_run',
     subjectRef: Array.isArray(datasetIds) ? datasetIds.join(',') : null,
-    payload: { datasetIds: datasetIds ?? null, force, attempted: rows.length, succeeded, failed, quarantined },
+    payload: { datasetIds: datasetIds ?? null, force, attempted: rows.length, succeeded, failed, quarantined, deduped },
   });
 
-  return { attempted: rows.length, succeeded, failed };
+  return { attempted: rows.length, succeeded, failed, deduped };
 }

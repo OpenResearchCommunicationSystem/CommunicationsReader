@@ -51,9 +51,28 @@ export async function importArchive() {
   throw new Error('importArchive is only available inside the Electron app');
 }
 
-export async function runExtraction(datasetIds) {
-  if (hasRealApi) return window.api.runExtraction(datasetIds);
+export async function runExtraction(options) {
+  if (hasRealApi) return window.api.runExtraction(options);
   throw new Error('runExtraction is only available inside the Electron app');
+}
+
+// Mirrors src/extract/ocr.js's AVAILABLE_LANGS/DEFAULT_LANGS for preview
+// mode, where the renderer runs standalone in a browser with no Electron
+// main process (and therefore no access to that Node module) to ask.
+const MOCK_AVAILABLE_LANGS = {
+  eng: 'English',
+  fas: 'Farsi',
+  ara: 'Arabic',
+  chi_sim: 'Chinese (Simplified)',
+  rus: 'Russian',
+  spa: 'Spanish',
+  tur: 'Turkish',
+  ell: 'Greek',
+};
+
+export async function getAvailableLangs() {
+  if (hasRealApi) return window.api.getAvailableLangs();
+  return { available: MOCK_AVAILABLE_LANGS, defaultLangs: ['eng', 'fas'] };
 }
 
 export async function runScan(datasetIds) {

@@ -67,7 +67,11 @@ export default function ReadingPane({ communication, cryptoMatches, onExportAtta
                   <span className={`extraction-badge extraction-${att.extractionStatus}`}>
                     {EXTRACTION_LABELS[att.extractionStatus] || att.extractionStatus}
                   </span>
-                  <button className="export-button" onClick={() => onExportAttachment(att.id)}>Export&hellip;</button>
+                  {att.extractionStatus === 'attempted_succeeded' && (
+                    <button className="export-button" onClick={() => onExportAttachment(att.id)} title="Export the extracted/OCR'd text -- never the original file">
+                      Export text&hellip;
+                    </button>
+                  )}
                 </div>
                 {att.extractionStatus === 'attempted_succeeded' && (
                   <div className="attachment-extracted-text" dir="auto">

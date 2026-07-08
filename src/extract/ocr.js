@@ -7,16 +7,16 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-// tesseract.js-data ships eng/fas traineddata in separate package
-// directories, but tesseract.js's language loader takes one shared
-// langPath for all requested languages in a single call. Merge both into
-// one local cache directory -- a pure local file copy, never a network
-// operation -- so both can be loaded together. This is the ONLY path that
-// actually matters for the "zero network calls" guarantee: verified by
-// reading tesseract.js's own source that on Node, the WASM core is
-// require()'d directly from the installed tesseract.js-core package
-// (corePath is a browser-only concern), and the CDN fallback in its
-// language loader only triggers when langPath is left unset.
+// tesseract.js-data ships each language's traineddata in its own package
+// directory, but tesseract.js's language loader takes one shared langPath
+// for all requested languages in a single call. Merge whichever languages
+// are requested into one local cache directory -- a pure local file copy,
+// never a network operation -- so they can be loaded together. This is the
+// ONLY path that actually matters for the "zero network calls" guarantee:
+// verified by reading tesseract.js's own source that on Node, the WASM
+// core is require()'d directly from the installed tesseract.js-core
+// package (corePath is a browser-only concern), and the CDN fallback in
+// its language loader only triggers when langPath is left unset.
 //
 // Defaults to a path next to this module, which is fine when running
 // from source (dev, tests, the CLI). Once packaged into an Electron app,
@@ -36,13 +36,46 @@ function getMergedLangDir() {
   return process.env.TESSDATA_CACHE_DIR || path.join(here, '..', '..', '.tessdata-cache');
 }
 
-const LANGS = ['eng', 'fas'];
+// Curated, not exhaustive: Tesseract itself supports 100+ languages, but
+// loading many at once measurably slows recognition and increases
+// misreads between visually similar scripts, so this app deliberately
+// bundles a working set (matched to scripts actually seen in this
+// project's test data and plausible casework) rather than "all of them,
+// always on." Callers choose a subset per OCR run (see run-extraction.js's
+// `langs` option) instead of every image always being recognized against
+// every bundled language. Adding a language here requires installing its
+// @tesseract.js-data/<code> package (see package.json).
+export const AVAILABLE_LANGS = {
+  eng: 'English',
+  fas: 'Farsi',
+  ara: 'Arabic',
+  chi_sim: 'Chinese (Simplified)',
+  rus: 'Russian',
+  spa: 'Spanish',
+  tur: 'Turkish',
+  ell: 'Greek',
+};
+
+export const DEFAULT_LANGS = ['eng', 'fas'];
 const OEM_LSTM_ONLY = 1;
 
-function ensureMergedLangPath() {
+function normalizeLangs(langs) {
+  const list = Array.isArray(langs) && langs.length > 0 ? langs : DEFAULT_LANGS;
+  const unknown = list.filter((l) => !AVAILABLE_LANGS[l]);
+  if (unknown.length > 0) {
+    throw new Error(`extractImageOcr: unsupported language code(s): ${unknown.join(', ')}`);
+  }
+  return list;
+}
+
+function langsCacheKey(langs) {
+  return [...langs].sort().join('+');
+}
+
+function ensureMergedLangPath(langs) {
   const mergedLangDir = getMergedLangDir();
   fs.mkdirSync(mergedLangDir, { recursive: true });
-  for (const lang of LANGS) {
+  for (const lang of langs) {
     const { langPath } = require(`@tesseract.js-data/${lang}`);
     const src = path.join(langPath, `${lang}.traineddata.gz`);
     const dest = path.join(mergedLangDir, `${lang}.traineddata.gz`);
@@ -53,18 +86,28 @@ function ensureMergedLangPath() {
   return mergedLangDir;
 }
 
-let workerPromise = null;
+// Keyed by the requested language combination -- e.g. a dataset OCR'd
+// with just ['ara'] and another with ['eng', 'fas'] each get their own
+// long-lived worker, since tesseract.js takes its language list at
+// worker-creation time, not per recognize() call. WASM instantiation is
+// expensive, so a given combination's worker is created once and reused
+// across a whole batch (run-extraction.js's driver), never per image.
+const workerPromises = new Map();
 
-function getWorker() {
-  if (!workerPromise) {
-    const langPath = ensureMergedLangPath();
-    workerPromise = createWorker(LANGS, OEM_LSTM_ONLY, {
-      langPath,
-      cachePath: langPath,
-      gzip: true,
-    });
+function getWorker(langs) {
+  const key = langsCacheKey(langs);
+  if (!workerPromises.has(key)) {
+    const langPath = ensureMergedLangPath(langs);
+    workerPromises.set(
+      key,
+      createWorker(langs, OEM_LSTM_ONLY, {
+        langPath,
+        cachePath: langPath,
+        gzip: true,
+      })
+    );
   }
-  return workerPromise;
+  return workerPromises.get(key);
 }
 
 // Confirmed empirically: tesseract.js's Node worker does NOT reliably
@@ -132,14 +175,17 @@ function runRecognizeWithCrashGuard(worker, savedPath) {
 
 /**
  * OCRs an image file (JPG/PNG/BMP/TIFF/WebP) using a single long-lived
- * Tesseract worker (English + Farsi). Never call createWorker per image --
- * WASM instantiation is expensive; run-extraction.js's batch driver reuses
- * this one worker across a whole batch via getWorker()'s caching.
+ * Tesseract worker for the given language combination (defaults to
+ * English + Farsi). Never call createWorker per image -- WASM
+ * instantiation is expensive; run-extraction.js's batch driver reuses one
+ * worker per language combination across a whole batch via getWorker()'s
+ * caching.
  */
-export async function extractImageOcr(savedPath) {
+export async function extractImageOcr(savedPath, langs) {
   if (!savedPath) {
     throw new Error('extractImageOcr: no file available (savedPath is empty)');
   }
+  const resolvedLangs = normalizeLangs(langs);
 
   const head = Buffer.alloc(16);
   const fh = await fs.promises.open(savedPath, 'r');
@@ -152,22 +198,24 @@ export async function extractImageOcr(savedPath) {
     throw new Error(`extractImageOcr: ${savedPath} does not look like a supported image format`);
   }
 
-  const worker = await getWorker();
+  const worker = await getWorker(resolvedLangs);
   const { data } = await runRecognizeWithCrashGuard(worker, savedPath);
   return {
     text: data.text ?? '',
-    meta: { ocrEngine: 'tesseract.js', ocrConfidenceMean: data.confidence ?? null },
+    meta: { ocrEngine: 'tesseract.js', ocrLangs: resolvedLangs, ocrConfidenceMean: data.confidence ?? null },
   };
 }
 
 /**
- * Terminates the shared worker so the process can exit cleanly. Call once
- * at the end of a batch run.
+ * Terminates every cached worker (one per distinct language combination
+ * used this run) so the process can exit cleanly. Call once at the end of
+ * a batch run.
  */
 export async function terminateOcrWorker() {
-  if (workerPromise) {
+  const pending = [...workerPromises.values()];
+  workerPromises.clear();
+  for (const workerPromise of pending) {
     const worker = await workerPromise;
     await worker.terminate();
-    workerPromise = null;
   }
 }

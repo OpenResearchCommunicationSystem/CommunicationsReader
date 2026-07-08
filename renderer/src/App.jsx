@@ -23,6 +23,10 @@ export default function App() {
   const [focusSet, setFocusSet] = useState([]);
   const [materializing, setMaterializing] = useState(false);
   const [materializeStatus, setMaterializeStatus] = useState(null);
+  const [availableLangs, setAvailableLangs] = useState(null);
+  const [selectedLangs, setSelectedLangs] = useState([]);
+  const [reExtractingId, setReExtractingId] = useState(null);
+  const [reExtractStatus, setReExtractStatus] = useState({});
 
   function loadFocusSet() {
     return api.focusList().then(setFocusSet).catch((err) => setError(err.message));
@@ -31,6 +35,13 @@ export default function App() {
   useEffect(() => {
     api.listDatasets().then(setDatasets).catch((err) => setError(err.message));
     api.getAppInfo().then(setAppInfo).catch(() => {});
+    api
+      .getAvailableLangs()
+      .then(({ available, defaultLangs }) => {
+        setAvailableLangs(available);
+        setSelectedLangs(defaultLangs);
+      })
+      .catch(() => {});
     loadFocusSet();
   }, []);
 
@@ -123,6 +134,23 @@ export default function App() {
     }
   }
 
+  function toggleLang(code) {
+    setSelectedLangs((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
+  }
+
+  async function handleReExtract(datasetId) {
+    setReExtractingId(datasetId);
+    setReExtractStatus((prev) => ({ ...prev, [datasetId]: null }));
+    try {
+      const result = await api.runExtraction({ datasetIds: [datasetId], langs: selectedLangs, force: true });
+      setReExtractStatus((prev) => ({ ...prev, [datasetId]: result }));
+    } catch (err) {
+      setReExtractStatus((prev) => ({ ...prev, [datasetId]: { error: err.message } }));
+    } finally {
+      setReExtractingId(null);
+    }
+  }
+
   async function handleAddToFocus(communicationId) {
     try {
       await api.focusAdd([communicationId], 'manual');
@@ -202,6 +230,7 @@ export default function App() {
         {appInfo && (
           <span className="app-build-info">
             v{appInfo.version} (build {appInfo.buildNumber})
+            {appInfo.workspaceDir && <> &mdash; {appInfo.workspaceDir}</>}
           </span>
         )}
         {!api.isElectron && <span className="preview-badge">Preview mode (mock data)</span>}
@@ -225,6 +254,12 @@ export default function App() {
           onSelectAll={selectAllDatasets}
           onImportClick={handleImportClick}
           onDelete={handleDeleteDataset}
+          availableLangs={availableLangs}
+          selectedLangs={selectedLangs}
+          onToggleLang={toggleLang}
+          onReExtract={handleReExtract}
+          reExtractingId={reExtractingId}
+          reExtractStatus={reExtractStatus}
         />
         <ThreadList
           threads={visibleThreads}

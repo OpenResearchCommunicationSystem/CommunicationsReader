@@ -39,8 +39,12 @@ const METHOD_NAME = {
  * Result also carries quarantineStatus/quarantineReason -- a lifecycle
  * separate from extractionStatus, see src/db/schema.js's attachments
  * table comment for the full state meanings.
+ *
+ * options.langs: which Tesseract languages to recognize an image against
+ * (see ocr.js's AVAILABLE_LANGS) -- ignored for non-image kinds. Defaults
+ * to ocr.js's own DEFAULT_LANGS when omitted.
  */
-export async function extractAttachmentText(attachment) {
+export async function extractAttachmentText(attachment, options = {}) {
   const kind = classifyAttachment(attachment);
 
   if (kind === 'unsupported') {
@@ -106,7 +110,7 @@ export async function extractAttachmentText(attachment) {
   try {
     const { text, meta } = SANDBOXED_KINDS.has(kind)
       ? await runSandboxedExtraction(kind, attachment.savedPath)
-      : await extractImageOcr(attachment.savedPath);
+      : await extractImageOcr(attachment.savedPath, options.langs);
     return {
       status: 'attempted_succeeded',
       method: methodName,

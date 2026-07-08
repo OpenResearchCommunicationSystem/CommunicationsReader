@@ -17,12 +17,12 @@ function insertBareCommunication(db, datasetId) {
   return Number(res.lastInsertRowid);
 }
 
-function insertAttachment(db, communicationId, { filename, mimeType, savedPath }) {
+function insertAttachment(db, communicationId, { filename, mimeType, savedPath, contentHash }) {
   const res = db
     .prepare(
-      `INSERT INTO attachments (communicationId, filename, mimeType, savedPath) VALUES (?, ?, ?, ?)`
+      `INSERT INTO attachments (communicationId, filename, mimeType, savedPath, contentHash) VALUES (?, ?, ?, ?, ?)`
     )
-    .run(communicationId, filename, mimeType, savedPath);
+    .run(communicationId, filename, mimeType, savedPath, contentHash ?? null);
   return Number(res.lastInsertRowid);
 }
 
@@ -114,6 +114,53 @@ test('runExtraction processes not_attempted attachments and writes results back'
   } finally {
     await cleanupDocx();
     await cleanupDisguised();
+    db.close();
+  }
+});
+
+test('runExtraction reuses the result for byte-identical attachments (contentHash + kind match)', async () => {
+  const db = openDatabase(':memory:');
+  const datasetId = insertDataset(db, { sourceType: 'email-eml', originalPath: 'x.zip' });
+  const communicationId = insertBareCommunication(db, datasetId);
+
+  const { filePath: docxPath, cleanup: cleanupDocx } = await writeBufferToTemp(
+    buildMinimalDocx('Forwarded contract text'),
+    'contract.docx'
+  );
+  const originalId = insertAttachment(db, communicationId, {
+    filename: 'contract.docx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    savedPath: docxPath,
+    contentHash: 'same-bytes-hash',
+  });
+  // Same contentHash + same kind, but savedPath points at a file that
+  // doesn't exist -- if dedup actually skips re-extraction (rather than
+  // just grouping rows for bookkeeping), this row's own broken savedPath
+  // is never read, and it still comes out 'attempted_succeeded'.
+  const forwardedId = insertAttachment(db, communicationId, {
+    filename: 'contract.docx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    savedPath: '/definitely/missing-duplicate.docx',
+    contentHash: 'same-bytes-hash',
+  });
+
+  try {
+    const summary = await runExtraction(db, { datasetIds: [datasetId] });
+    assert.equal(summary.attempted, 2);
+    assert.equal(summary.succeeded, 2);
+    assert.equal(summary.deduped, 1);
+
+    const originalRow = db.prepare('SELECT * FROM attachments WHERE id = ?').get(originalId);
+    const forwardedRow = db.prepare('SELECT * FROM attachments WHERE id = ?').get(forwardedId);
+
+    assert.equal(forwardedRow.extractionStatus, 'attempted_succeeded');
+    assert.equal(forwardedRow.extractedText, originalRow.extractedText);
+    assert.ok(forwardedRow.extractedText.includes('Forwarded contract text'));
+
+    const forwardedMeta = JSON.parse(forwardedRow.extractionMeta);
+    assert.equal(forwardedMeta.dedupedFromAttachmentId, originalId);
+  } finally {
+    await cleanupDocx();
     db.close();
   }
 });
