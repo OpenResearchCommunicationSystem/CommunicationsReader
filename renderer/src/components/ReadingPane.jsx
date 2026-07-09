@@ -29,12 +29,19 @@ const EXTRACTION_LABELS = {
 function TranslateControl({ availableTranslateLangs, translating, onTranslate, translatedText, translatedLang }) {
   const codes = Object.keys(availableTranslateLangs || {});
   const [sourceLang, setSourceLang] = useState(codes[0] || '');
+  // Lets the investigator pick a different source language after a bad
+  // result (wrong language selected, garbage output) instead of being
+  // stuck with the first attempt -- reset alongside translatedText via
+  // ReadingPane's per-communication `key` remount, same as sourceLang.
+  const [retranslating, setRetranslating] = useState(false);
 
   if (codes.length === 0) return null;
 
+  const showSelector = !translatedText || retranslating;
+
   return (
     <div className="translate-control">
-      {!translatedText && (
+      {showSelector && (
         <>
           <select value={sourceLang} onChange={(e) => setSourceLang(e.target.value)} disabled={translating}>
             {codes.map((code) => (
@@ -44,16 +51,22 @@ function TranslateControl({ availableTranslateLangs, translating, onTranslate, t
           <button
             className="translate-button"
             disabled={translating || !sourceLang}
-            onClick={() => onTranslate(sourceLang)}
+            onClick={() => {
+              setRetranslating(false);
+              onTranslate(sourceLang);
+            }}
             title="Machine translation, fully offline -- quality varies by language and is not a substitute for a human translator"
           >
             {translating ? 'Translating…' : 'Translate from…'}
           </button>
         </>
       )}
-      {translatedText && (
+      {translatedText && !retranslating && (
         <div className="translated-text" dir="auto">
-          <div className="translated-text-label">Machine translation from {availableTranslateLangs[translatedLang] || translatedLang}:</div>
+          <div className="translated-text-label">
+            Machine translation from {availableTranslateLangs[translatedLang] || translatedLang}:
+            <button className="retranslate-link" onClick={() => setRetranslating(true)}>Wrong language? Retranslate</button>
+          </div>
           {translatedText}
         </div>
       )}
