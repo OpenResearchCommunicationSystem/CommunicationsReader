@@ -26,7 +26,20 @@ const EXTRACTION_LABELS = {
 // (via a `key` on communication.id in App.jsx) whenever the selected
 // message changes, so this resets naturally rather than leaking a stale
 // selection across messages.
-function TranslateControl({ availableTranslateLangs, translating, onTranslate, translatedText, translatedLang }) {
+// translationMeta is stored as a JSON string (src/translate/translate.js's
+// meta, written verbatim by translate-record.js) -- parsed defensively
+// since it's null before the first translation and this is user-facing
+// display code, not a trust boundary worth throwing on.
+function parseTranslationMeta(raw) {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function TranslateControl({ availableTranslateLangs, translating, onTranslate, translatedText, translatedLang, translationMeta }) {
   const codes = Object.keys(availableTranslateLangs || {});
   const [sourceLang, setSourceLang] = useState(codes[0] || '');
   // Lets the investigator pick a different source language after a bad
@@ -38,6 +51,9 @@ function TranslateControl({ availableTranslateLangs, translating, onTranslate, t
   if (codes.length === 0) return null;
 
   const showSelector = !translatedText || retranslating;
+  const meta = parseTranslationMeta(translationMeta);
+  const sourceNumericSpans = meta?.sourceNumericSpans || [];
+  const missingSpans = meta?.numericSpansMissingInTranslation || [];
 
   return (
     <div className="translate-control">
@@ -68,6 +84,18 @@ function TranslateControl({ availableTranslateLangs, translating, onTranslate, t
             <button className="retranslate-link" onClick={() => setRetranslating(true)}>Wrong language? Retranslate</button>
           </div>
           {translatedText}
+          {missingSpans.length > 0 && (
+            <div className="numeric-spans-warning">
+              <strong>⚠ Numbers/codes not confirmed in translation:</strong> machine translation is unreliable with
+              figures -- these appeared in the original but not verbatim in the translation above, so treat them (and
+              any other numbers here) as unverified until checked against the original text: {missingSpans.join(', ')}
+            </div>
+          )}
+          {sourceNumericSpans.length > 0 && (
+            <div className="numeric-spans-note">
+              Figures/codes detected in original (verify against the translation above): {sourceNumericSpans.join(', ')}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -129,6 +157,7 @@ export default function ReadingPane({
           onTranslate={(sourceLang) => onTranslateCommunication(communication.id, sourceLang)}
           translatedText={communication.translatedText}
           translatedLang={communication.translatedLang}
+          translationMeta={communication.translationMeta}
         />
       )}
 
@@ -165,6 +194,7 @@ export default function ReadingPane({
                     onTranslate={(sourceLang) => onTranslateAttachment(att.id, sourceLang)}
                     translatedText={att.translatedText}
                     translatedLang={att.translatedLang}
+                    translationMeta={att.translationMeta}
                   />
                 )}
               </li>

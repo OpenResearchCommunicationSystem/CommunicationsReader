@@ -144,6 +144,88 @@ function getTranslator(lang) {
   return translatorPromises.get(lang);
 }
 
+// --- Sentence segmentation --------------------------------------------
+// Marian/OPUS-MT's own documentation recommends translating one sentence
+// at a time -- these models are trained on sentence-aligned parallel
+// corpora, so a multi-sentence paragraph is already somewhat out of
+// distribution even after the paragraph-level splitting above. Sentence-
+// ending punctuation differs by script: CJK uses full-width 。！？ with no
+// following space; Arabic/Farsi use ؟ (U+061F) alongside the Latin . and
+// !; Russian/Turkish use ordinary Latin punctuation. This is a plain
+// regex splitter, not a proper sentence-boundary model (no abbreviation
+// handling) -- research on this consistently finds even a naive
+// segmenter beats no segmentation at all, and a heavier NLP dependency
+// isn't worth it for this project's portable-packaging constraints.
+const SENTENCE_SPLIT_RE = {
+  chi_sim: /(?<=[。！？])/,
+  ara: /(?<=[؟!.])\s*/,
+  fas: /(?<=[؟!.])\s*/,
+};
+const DEFAULT_SENTENCE_SPLIT_RE = /(?<=[.!?])\s+/;
+
+function splitSentences(paragraph, lang) {
+  const re = SENTENCE_SPLIT_RE[lang] ?? DEFAULT_SENTENCE_SPLIT_RE;
+  return paragraph.split(re).map((s) => s.trim()).filter(Boolean);
+}
+
+// --- Numeric/reference-code masking: TRIED AND REJECTED -------------------
+// The decades-old CAT-tool technique (memoQ's "non-translatable" spans,
+// Wordfast's "placeables") -- mask numbers/codes behind a placeholder
+// token before translation, restore the original source text afterward --
+// was implemented here and then reverted after measuring its actual
+// effect. It made output WORSE, not better: this off-the-shelf Marian
+// pipeline has no special-token support telling it a placeholder like
+// "NUMONE" is an opaque, untranslatable unit, so it just tokenizes and
+// "translates" the placeholder like any other word, producing things
+// like "US$ 0.OMOTO" and "US$20.023 million" -- confirmed against this
+// project's own language-test dataset. That's a worse failure mode than
+// the plain digit corruption it was meant to fix (9,200 -> 90,000): a
+// fabricated-looking number is more dangerous to an investigator than an
+// obviously-broken one. Real production placeholder systems rely on
+// word-alignment/attention weights (or a tokenizer with the placeholder
+// registered as a real special token) to know which output span
+// corresponds to which input placeholder -- neither is readily available
+// through transformers.js's plain pipeline() API, so this technique
+// doesn't transfer here without deeper model-level changes. Sentence-
+// level splitting alone (above) already fixed the numbers that matter
+// most in practice ($8,500, $150,000, 35%, $4.35/share all came back
+// exactly correct in the same test letter); what's left --minor rounding
+// drift and CJK multiplier words like 万 (x10,000) converting inaccurately
+// -- has no software fix here. Investigators must cross-check any
+// translated figure against the original text; this tool does not
+// guarantee numeric fidelity.
+//
+// Worse still: this isn't purely a long-input or chunk-size problem.
+// Confirmed against a single short isolated sentence with no surrounding
+// context at all ("价格是8,500美元。", nothing else) -- "$8,500" came back
+// as "ki-da", a complete fabrication with no numeral in it whatsoever.
+// Since even an untouched, unmasked, isolated number can be destroyed,
+// no chunking or masking strategy can fully solve this -- it's a
+// reliability property of the model itself. The only thing left to do
+// is detect and flag it after the fact rather than try to prevent it.
+
+// --- Numeric/reference-code detection (for post-hoc verification) --------
+// Since translation can't be trusted to preserve these spans, extract
+// them from the ORIGINAL (untouched, guaranteed-correct) source text and
+// hand them back in meta so the UI can show the investigator a "these are
+// the real figures -- check the translation against them" list, and flag
+// any one of them that doesn't appear verbatim anywhere in the translated
+// output as a strong, high-confidence "this may have been mistranslated"
+// signal. Same regexes the (reverted) masking attempt used -- they were
+// never the problem, using them to intervene in translation was.
+const REFERENCE_CODE_RE = /\b[A-Z]{2,6}-[A-Z0-9-]+\b/g;
+const NUMERIC_SPAN_RE = /(?<![A-Za-z])\$?\d[\d,]*(?:\.\d+)?%?/g;
+
+function extractNumericSpans(text) {
+  const codes = [...new Set([...text.matchAll(REFERENCE_CODE_RE)].map((m) => m[0]))];
+  const numbers = [...new Set([...text.matchAll(NUMERIC_SPAN_RE)].map((m) => m[0]))]
+    // Drop a bare number that's already contained in a captured reference
+    // code (e.g. "77341" inside "INV-77341") -- same figure, would
+    // otherwise show up twice in the investigator-facing checklist.
+    .filter((num) => !codes.some((code) => code.includes(num)));
+  return [...codes, ...numbers];
+}
+
 /**
  * Translates text from the given source language into English using a
  * local ONNX model (Marian for ara/chi_sim/rus/tur/ell, mT5 for fas) --
@@ -151,17 +233,59 @@ function getTranslator(lang) {
  * category as ocr.js's Tesseract OCR. Quality varies a lot by language and
  * is not a substitute for a human/professional translation -- this is
  * explicitly the "even bad machine translation beats nothing" tool.
+ *
+ * Pipeline: split on paragraph breaks, then sentences within each
+ * paragraph (see splitSentences() above for why), translating each
+ * sentence individually. Confirmed necessary against a real ~350-word
+ * 4-paragraph Chinese business letter
+ * (sample-data/dummy-dataset-language-test-1.zip's own "LONG" tier): fed
+ * whole with no chunking at all, the model merged the last two
+ * paragraphs into one incoherent sentence, dropping an entire equity-deal
+ * paragraph's figures and mangling embedded English terms ("Charter
+ * Party" -> gibberish, "Due Diligence" -> gone entirely) -- these models
+ * silently degrade past their training distribution rather than erroring,
+ * so there's no failure signal short of checking real output.
+ *
+ * meta.sourceNumericSpans / meta.numericSpansMissingInTranslation (see
+ * extractNumericSpans() above) let the UI show the investigator which
+ * numbers/codes from the ORIGINAL text to manually verify, and flag any
+ * that don't survive into the translation at all -- since, per the
+ * comment above, translation cannot be trusted to preserve these itself.
  */
 export async function translateText(text, sourceLang) {
   const lang = normalizeLang(sourceLang);
+  const meta = { translationEngine: 'transformers.js', sourceLang: lang, modelId: MODEL_CONFIG[lang].dir };
   if (!text) {
-    return { text: '', meta: { translationEngine: 'transformers.js', sourceLang: lang, modelId: MODEL_CONFIG[lang].dir } };
+    return { text: '', meta };
   }
 
   const translator = await getTranslator(lang);
-  const [result] = await translator(text);
-  return {
-    text: result?.translation_text ?? '',
-    meta: { translationEngine: 'transformers.js', sourceLang: lang, modelId: MODEL_CONFIG[lang].dir },
-  };
+
+  async function translateSentence(sentence) {
+    if (!sentence.trim()) return '';
+    const [result] = await translator(sentence);
+    return result?.translation_text ?? '';
+  }
+
+  const paragraphs = text.split(/\n\s*\n/);
+  const translatedParagraphs = [];
+  for (const para of paragraphs) {
+    if (!para.trim()) {
+      translatedParagraphs.push('');
+      continue;
+    }
+    const sentences = splitSentences(para, lang);
+    const translatedSentences = [];
+    for (const sentence of sentences) {
+      translatedSentences.push(await translateSentence(sentence));
+    }
+    translatedParagraphs.push(translatedSentences.join(' '));
+  }
+  const translatedText = translatedParagraphs.join('\n\n');
+
+  const sourceNumericSpans = extractNumericSpans(text);
+  meta.sourceNumericSpans = sourceNumericSpans;
+  meta.numericSpansMissingInTranslation = sourceNumericSpans.filter((span) => !translatedText.includes(span));
+
+  return { text: translatedText, meta };
 }

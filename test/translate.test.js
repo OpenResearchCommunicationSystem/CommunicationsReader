@@ -29,6 +29,40 @@ test('translateText translates Farsi (mT5 path) into English', async () => {
   assert.equal(result.meta.sourceLang, 'fas');
 });
 
+test('translateText translates each paragraph of a multi-paragraph body independently', async () => {
+  // Regression test for a real failure found via sample-data/dummy-dataset-
+  // language-test-1.zip's "LONG" tier: feeding a multi-paragraph letter
+  // through in one pass caused later paragraphs to merge into an
+  // incoherent, fact-dropping mess. Two short, topically distinct
+  // sentences here (not a full long letter, to keep this real-inference
+  // test fast) -- both topics should survive recognizably and the join
+  // should preserve the paragraph break.
+  const text = 'مرحبا، كيف حالك اليوم؟\n\nشكرا جزيلا على مساعدتك.';
+  const result = await translateText(text, 'ara');
+  assert.match(result.text, /how|hi|hello/i);
+  assert.match(result.text, /thank/i);
+  assert.ok(result.text.includes('\n\n'), 'expected the paragraph break to be preserved in the joined output');
+});
+
+test('translateText flags a numeric span that did not survive translation', async () => {
+  // Regression test for a real, reproducible failure: this exact short
+  // isolated sentence ("The price is 8,500 dollars.") translates the
+  // number into complete gibberish ("ki-da") with no numeral in it at
+  // all -- confirmed not to be a chunking-size problem (see translate.js's
+  // comment on why masking was tried and reverted). Since translation
+  // itself can't be trusted to preserve this, meta.numericSpansMissingInTranslation
+  // is the actual safety net -- this locks in that it fires correctly.
+  const result = await translateText('价格是8,500美元。', 'chi_sim');
+  assert.deepEqual(result.meta.sourceNumericSpans, ['8,500']);
+  assert.deepEqual(result.meta.numericSpansMissingInTranslation, ['8,500']);
+});
+
+test('translateText does not flag a reference code that survives translation, and does not double-count its digits', async () => {
+  const result = await translateText('发票编号INV-77341已确认。', 'chi_sim');
+  assert.deepEqual(result.meta.sourceNumericSpans, ['INV-77341']);
+  assert.deepEqual(result.meta.numericSpansMissingInTranslation, []);
+});
+
 test('translateText returns an empty string for empty input without invoking the model', async () => {
   const result = await translateText('', 'ara');
   assert.equal(result.text, '');
