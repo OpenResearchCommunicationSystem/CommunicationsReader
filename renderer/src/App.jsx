@@ -5,7 +5,41 @@ import MessageList from './components/MessageList.jsx';
 import ReadingPane from './components/ReadingPane.jsx';
 import SearchPanel from './components/SearchPanel.jsx';
 import FocusPanel from './components/FocusPanel.jsx';
+import ResizeHandle from './components/ResizeHandle.jsx';
 import * as api from './api.js';
+
+const LAYOUT_STORAGE_KEY = 'panelLayout.v1';
+const COLLAPSED_WIDTH = 40;
+const MIN_PANEL_WIDTH = 140;
+const MAX_PANEL_WIDTH = 640;
+const DEFAULT_LAYOUT = {
+  dataset: { width: 220, collapsed: false },
+  threads: { width: 300, collapsed: false },
+  messages: { width: 320, collapsed: false },
+  focus: { width: 260, collapsed: false },
+};
+
+function loadLayout() {
+  try {
+    const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
+    if (!raw) return DEFAULT_LAYOUT;
+    const parsed = JSON.parse(raw);
+    // Merge over defaults rather than trusting the stored blob outright --
+    // a future panel added to the layout shouldn't come back undefined for
+    // users with an older saved layout.
+    const merged = { ...DEFAULT_LAYOUT };
+    for (const key of Object.keys(DEFAULT_LAYOUT)) {
+      if (parsed[key]) merged[key] = { ...DEFAULT_LAYOUT[key], ...parsed[key] };
+    }
+    return merged;
+  } catch {
+    return DEFAULT_LAYOUT;
+  }
+}
+
+function clampWidth(width) {
+  return Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, width));
+}
 
 export default function App() {
   const [datasets, setDatasets] = useState([]);
@@ -30,6 +64,32 @@ export default function App() {
   const [availableTranslateLangs, setAvailableTranslateLangs] = useState(null);
   const [translatingCommunication, setTranslatingCommunication] = useState(false);
   const [translatingAttachmentId, setTranslatingAttachmentId] = useState(null);
+  const [layout, setLayout] = useState(loadLayout);
+
+  useEffect(() => {
+    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
+  }, [layout]);
+
+  function toggleCollapse(key) {
+    setLayout((prev) => ({ ...prev, [key]: { ...prev[key], collapsed: !prev[key].collapsed } }));
+  }
+
+  // invert=true for the one handle (reading pane <-> focus) where dragging
+  // right should shrink the panel, since it sits to the handle's right
+  // instead of its left.
+  function resizeColumn(key, delta, invert = false) {
+    setLayout((prev) => {
+      if (prev[key].collapsed) return prev;
+      const signedDelta = invert ? -delta : delta;
+      return { ...prev, [key]: { ...prev[key], width: clampWidth(prev[key].width + signedDelta) } };
+    });
+  }
+
+  function colStyle(key) {
+    const col = layout[key];
+    const width = col.collapsed ? COLLAPSED_WIDTH : col.width;
+    return { flex: `0 0 ${width}px` };
+  }
 
   function loadFocusSet() {
     return api.focusList().then(setFocusSet).catch((err) => setError(err.message));
@@ -308,13 +368,21 @@ export default function App() {
           onReExtract={handleReExtract}
           reExtractingId={reExtractingId}
           reExtractStatus={reExtractStatus}
+          style={colStyle('dataset')}
+          collapsed={layout.dataset.collapsed}
+          onToggleCollapse={() => toggleCollapse('dataset')}
         />
+        <ResizeHandle onResize={(delta) => resizeColumn('dataset', delta)} />
         <ThreadList
           threads={visibleThreads}
           selectedThreadId={selectedThreadId}
           onSelect={selectThread}
           onAddThreadToFocus={handleAddThreadToFocus}
+          style={colStyle('threads')}
+          collapsed={layout.threads.collapsed}
+          onToggleCollapse={() => toggleCollapse('threads')}
         />
+        <ResizeHandle onResize={(delta) => resizeColumn('threads', delta)} />
         <MessageList
           thread={selectedThread}
           selectedCommunicationId={selectedCommunicationId}
@@ -322,7 +390,11 @@ export default function App() {
           matchedIds={matchedCommunicationIds}
           focusedIds={focusedIds}
           onAddToFocus={handleAddToFocus}
+          style={colStyle('messages')}
+          collapsed={layout.messages.collapsed}
+          onToggleCollapse={() => toggleCollapse('messages')}
         />
+        <ResizeHandle onResize={(delta) => resizeColumn('messages', delta)} />
         <ReadingPane
           key={communication?.id}
           communication={communication}
@@ -334,6 +406,7 @@ export default function App() {
           translatingCommunication={translatingCommunication}
           translatingAttachmentId={translatingAttachmentId}
         />
+        <ResizeHandle onResize={(delta) => resizeColumn('focus', delta, true)} />
         <FocusPanel
           focusSet={focusSet}
           selectedCommunicationId={selectedCommunicationId}
@@ -343,6 +416,9 @@ export default function App() {
           onMaterialize={handleMaterializeFocus}
           materializing={materializing}
           materializeStatus={materializeStatus}
+          style={colStyle('focus')}
+          collapsed={layout.focus.collapsed}
+          onToggleCollapse={() => toggleCollapse('focus')}
         />
       </div>
     </div>

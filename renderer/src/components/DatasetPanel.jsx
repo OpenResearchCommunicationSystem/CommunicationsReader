@@ -1,3 +1,5 @@
+import CollapsedStrip from './CollapsedStrip.jsx';
+
 export default function DatasetPanel({
   datasets,
   selectedIds,
@@ -12,14 +14,29 @@ export default function DatasetPanel({
   onReExtract,
   reExtractingId,
   reExtractStatus,
+  style,
+  collapsed,
+  onToggleCollapse,
 }) {
+  if (collapsed) {
+    return (
+      <div className="dataset-panel panel-collapsed" style={style}>
+        <CollapsedStrip label="Datasets" onExpand={onToggleCollapse} />
+      </div>
+    );
+  }
+
   return (
-    <div className="dataset-panel">
+    <div className="dataset-panel" style={style}>
       <div className="panel-header">
         <h2>Datasets</h2>
-        <button className="import-button" onClick={onImportClick}>+ Import</button>
+        <button className="collapse-toggle" onClick={onToggleCollapse} title="Collapse">&laquo;</button>
+      </div>
+      <div className="import-row">
+        <span className="import-row-label">Import</span>
+        <button className="import-button" onClick={onImportClick} title="Import a raw archive (.zip)">.ZIP</button>
         <button className="import-button" onClick={onImportAutopsyCaseClick} title="Import an existing Autopsy case (reads message content from autopsy.db; attachments come through as hash/metadata only, no file content)">
-          + Import Autopsy Case…
+          Autopsy
         </button>
       </div>
       {availableLangs && (

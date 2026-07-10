@@ -3,11 +3,22 @@ function formatDateTime(ts) {
   return new Date(ts).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-export default function FocusPanel({ focusSet, selectedCommunicationId, onSelect, onRemove, onClear, onMaterialize, materializing, materializeStatus }) {
+import CollapsedStrip from './CollapsedStrip.jsx';
+
+export default function FocusPanel({ focusSet, selectedCommunicationId, onSelect, onRemove, onClear, onMaterialize, materializing, materializeStatus, style, collapsed, onToggleCollapse }) {
+  if (collapsed) {
+    return (
+      <div className="focus-panel panel-collapsed" style={style}>
+        <CollapsedStrip label={`Focus (${focusSet.length})`} onExpand={onToggleCollapse} />
+      </div>
+    );
+  }
+
   return (
-    <div className="focus-panel">
+    <div className="focus-panel" style={style}>
       <div className="panel-header">
         <h2>Focus ({focusSet.length})</h2>
+        <button className="collapse-toggle" onClick={onToggleCollapse} title="Collapse">&laquo;</button>
       </div>
       <div className="focus-actions">
         <button className="focus-materialize-button" onClick={onMaterialize} disabled={focusSet.length === 0 || materializing}>

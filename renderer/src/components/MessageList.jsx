@@ -3,12 +3,23 @@ function formatDateTime(ts) {
   return new Date(ts).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-export default function MessageList({ thread, selectedCommunicationId, onSelect, matchedIds, focusedIds, onAddToFocus }) {
+import CollapsedStrip from './CollapsedStrip.jsx';
+
+export default function MessageList({ thread, selectedCommunicationId, onSelect, matchedIds, focusedIds, onAddToFocus, style, collapsed, onToggleCollapse }) {
+  if (collapsed) {
+    return (
+      <div className="message-list panel-collapsed" style={style}>
+        <CollapsedStrip label={thread ? (thread.subject || '(no subject)') : 'Messages'} onExpand={onToggleCollapse} />
+      </div>
+    );
+  }
+
   if (!thread) {
     return (
-      <div className="message-list">
+      <div className="message-list" style={style}>
         <div className="panel-header">
           <h2>Messages</h2>
+          <button className="collapse-toggle" onClick={onToggleCollapse} title="Collapse">&laquo;</button>
         </div>
         <div className="empty-state">Select a thread to see its messages.</div>
       </div>
@@ -16,9 +27,10 @@ export default function MessageList({ thread, selectedCommunicationId, onSelect,
   }
 
   return (
-    <div className="message-list">
+    <div className="message-list" style={style}>
       <div className="panel-header">
         <h2>{thread.subject || '(no subject)'}</h2>
+        <button className="collapse-toggle" onClick={onToggleCollapse} title="Collapse">&laquo;</button>
       </div>
       <ul>
         {thread.members.map((member) => {

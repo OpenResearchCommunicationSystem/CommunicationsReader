@@ -3,11 +3,22 @@ function formatDate(ts) {
   return new Date(ts).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-export default function ThreadList({ threads, selectedThreadId, onSelect, onAddThreadToFocus }) {
+import CollapsedStrip from './CollapsedStrip.jsx';
+
+export default function ThreadList({ threads, selectedThreadId, onSelect, onAddThreadToFocus, style, collapsed, onToggleCollapse }) {
+  if (collapsed) {
+    return (
+      <div className="thread-list panel-collapsed" style={style}>
+        <CollapsedStrip label={`Threads (${threads.length})`} onExpand={onToggleCollapse} />
+      </div>
+    );
+  }
+
   return (
-    <div className="thread-list">
+    <div className="thread-list" style={style}>
       <div className="panel-header">
         <h2>Threads ({threads.length})</h2>
+        <button className="collapse-toggle" onClick={onToggleCollapse} title="Collapse">&laquo;</button>
       </div>
       <ul>
         {threads.map((thread) => (
