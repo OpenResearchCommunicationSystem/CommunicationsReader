@@ -1,4 +1,4 @@
-import AdmZip from 'adm-zip';
+import unzipper from 'unzipper';
 import { mkdtemp, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -38,12 +38,19 @@ async function findMboxCandidates(rootDir) {
  * Extracts a ZIP archive to a fresh temp directory and detects whether its
  * contents are a single mbox file or a tree of .eml files.
  *
+ * Uses unzipper rather than adm-zip: adm-zip reads the whole archive into
+ * one in-memory buffer via fs.readFileSync, which hits Node's hard
+ * ERR_FS_FILE_TOO_LARGE ceiling (2 GiB) on real-world multi-GB exports.
+ * unzipper streams each entry to disk via ranged fs.createReadStream reads
+ * and understands Zip64 central directories, so archive size isn't bounded
+ * by Node's single-read limit.
+ *
  * Returns { containerType: 'mbox' | 'eml', extractedPath, mboxPath?, emlPaths?, note? }
  */
 export async function extractAndDetect(zipPath) {
   const workDir = await mkdtemp(path.join(tmpdir(), 'email-reader-'));
-  const zip = new AdmZip(zipPath);
-  zip.extractAllTo(workDir, true);
+  const directory = await unzipper.Open.file(zipPath);
+  await directory.extract({ path: workDir, concurrency: 4 });
 
   const mboxCandidates = await findMboxCandidates(workDir);
   const emlPaths = await walkForEmlFiles(workDir);
