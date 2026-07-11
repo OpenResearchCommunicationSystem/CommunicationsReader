@@ -8,6 +8,7 @@ export default function DatasetPanel({
   onImportClick,
   onImportAutopsyCaseClick,
   onDelete,
+  activeImportKind,
   availableLangs,
   selectedLangs,
   onToggleLang,
@@ -34,9 +35,21 @@ export default function DatasetPanel({
       </div>
       <div className="import-row">
         <span className="import-row-label">Import</span>
-        <button className="import-button" onClick={onImportClick} title="Import a raw archive (.zip)">.ZIP</button>
-        <button className="import-button" onClick={onImportAutopsyCaseClick} title="Import an existing Autopsy case (reads message content from autopsy.db; attachments come through as hash/metadata only, no file content)">
-          Autopsy
+        <button
+          className="import-button"
+          onClick={onImportClick}
+          disabled={Boolean(activeImportKind)}
+          title="Import a raw archive (.zip)"
+        >
+          {activeImportKind === 'archive' ? 'Importing…' : '.ZIP'}
+        </button>
+        <button
+          className="import-button"
+          onClick={onImportAutopsyCaseClick}
+          disabled={Boolean(activeImportKind)}
+          title="Import an existing Autopsy case (reads message content from autopsy.db; attachments come through as hash/metadata only, no file content)"
+        >
+          {activeImportKind === 'autopsy' ? 'Importing…' : 'Autopsy'}
         </button>
       </div>
       {availableLangs && (
@@ -85,6 +98,7 @@ export default function DatasetPanel({
               className="delete-dataset-button"
               title="Delete this dataset"
               aria-label={`Delete ${ds.label || `Dataset ${ds.id}`}`}
+              disabled={Boolean(activeImportKind)}
               onClick={() => onDelete(ds.id)}
             >
               &times;

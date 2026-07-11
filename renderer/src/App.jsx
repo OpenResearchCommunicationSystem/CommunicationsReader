@@ -6,6 +6,7 @@ import ReadingPane from './components/ReadingPane.jsx';
 import SearchPanel from './components/SearchPanel.jsx';
 import FocusPanel from './components/FocusPanel.jsx';
 import ResizeHandle from './components/ResizeHandle.jsx';
+import ActivityIndicator from './components/ActivityIndicator.jsx';
 import * as api from './api.js';
 
 const LAYOUT_STORAGE_KEY = 'panelLayout.v1';
@@ -65,6 +66,28 @@ export default function App() {
   const [translatingCommunication, setTranslatingCommunication] = useState(false);
   const [translatingAttachmentId, setTranslatingAttachmentId] = useState(null);
   const [layout, setLayout] = useState(loadLayout);
+  // Covers the operations that previously had zero loading feedback at all
+  // (import-archive, import-autopsy-case, delete-dataset) -- unlike
+  // re-extract/translate/materialize below, these can run for a long time
+  // against a real multi-GB dataset with nothing on screen telling the
+  // investigator whether the app is working or just hung.
+  const [activeImportKind, setActiveImportKind] = useState(null); // 'archive' | 'autopsy' | 'delete' | null
+
+  // Single unified "is anything running right now" signal for the titlebar
+  // indicator, folding together every long-running operation's own state
+  // (each of which also still drives its own inline "Running…" label at
+  // the point of interaction) so there's one place to glance at regardless
+  // of which action is in flight.
+  const activeOperation = useMemo(() => {
+    if (activeImportKind === 'archive') return 'Importing archive…';
+    if (activeImportKind === 'autopsy') return 'Importing Autopsy case…';
+    if (activeImportKind === 'delete') return 'Deleting dataset…';
+    if (materializing) return 'Preparing focus export…';
+    if (translatingCommunication) return 'Translating…';
+    if (translatingAttachmentId != null) return 'Translating attachment…';
+    if (reExtractingId != null) return 'Re-running OCR…';
+    return null;
+  }, [activeImportKind, materializing, translatingCommunication, translatingAttachmentId, reExtractingId]);
 
   useEffect(() => {
     localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
@@ -171,6 +194,7 @@ export default function App() {
   }
 
   async function handleImportClick() {
+    setActiveImportKind('archive');
     try {
       const result = await api.importArchive();
       if (result) {
@@ -178,10 +202,13 @@ export default function App() {
       }
     } catch (err) {
       setError(err.message);
+    } finally {
+      setActiveImportKind(null);
     }
   }
 
   async function handleImportAutopsyCaseClick() {
+    setActiveImportKind('autopsy');
     try {
       const result = await api.importAutopsyCase();
       if (result) {
@@ -189,6 +216,8 @@ export default function App() {
       }
     } catch (err) {
       setError(err.message);
+    } finally {
+      setActiveImportKind(null);
     }
   }
 
@@ -201,6 +230,7 @@ export default function App() {
   }
 
   async function handleDeleteDataset(datasetId) {
+    setActiveImportKind('delete');
     try {
       const result = await api.deleteDataset(datasetId);
       if (result?.deleted) {
@@ -209,6 +239,8 @@ export default function App() {
       }
     } catch (err) {
       setError(err.message);
+    } finally {
+      setActiveImportKind(null);
     }
   }
 
@@ -341,6 +373,7 @@ export default function App() {
           </span>
         )}
         {!api.isElectron && <span className="preview-badge">Preview mode (mock data)</span>}
+        <ActivityIndicator label={activeOperation} />
       </header>
       {error && (
         <div className="error-banner" onClick={() => setError(null)}>
@@ -362,6 +395,7 @@ export default function App() {
           onImportClick={handleImportClick}
           onImportAutopsyCaseClick={handleImportAutopsyCaseClick}
           onDelete={handleDeleteDataset}
+          activeImportKind={activeImportKind}
           availableLangs={availableLangs}
           selectedLangs={selectedLangs}
           onToggleLang={toggleLang}
