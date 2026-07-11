@@ -1,4 +1,5 @@
 import path from 'node:path';
+import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 // Autopsy's artifact_id/obj_id values are signed 64-bit integers that
@@ -16,10 +17,17 @@ function bigIntStatement(db, sql) {
 /**
  * Opens an Autopsy case's autopsy.db read-only. caseDir is the folder
  * containing both the .aut file and autopsy.db (what Autopsy itself calls
- * the case directory).
+ * the case directory) -- not its parent. node:sqlite's own "unable to open
+ * database file" error gives no hint which of those two folders was meant,
+ * so check for autopsy.db up front and say so directly.
  */
 export function openCaseDb(caseDir) {
   const dbPath = path.join(caseDir, 'autopsy.db');
+  if (!fs.existsSync(dbPath)) {
+    throw new Error(
+      `No autopsy.db found in "${caseDir}" -- select the folder containing the .aut file, not its parent.`
+    );
+  }
   return new DatabaseSync(dbPath, { readOnly: true });
 }
 
