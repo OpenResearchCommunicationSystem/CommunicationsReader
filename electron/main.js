@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { openDatabase } from '../src/db/schema.js';
-import { readRememberedWorkspace, rememberWorkspace } from '../src/workspace/resolve-workspace.js';
+import { readRememberedWorkspace, rememberWorkspace, pointerFilePath } from '../src/workspace/resolve-workspace.js';
 import {
   workspaceDbPath,
   workspaceAttachmentsDir,
@@ -45,39 +45,58 @@ let currentWorkspaceDir;
 
 /**
  * Asks where to keep the case workspace (database + attachments + OCR
- * language cache -- see src/workspace/workspace-paths.js) if nothing was
- * remembered from last launch, or the remembered folder's drive isn't
- * currently reachable (unplugged external, or the machine was reset --
- * see the S5 VM-build workflow, where the host machine itself is
- * periodically disposable). Defaults to userData if the dialog is
- * cancelled, so a bare install still works with zero clicks, but the
- * whole point of asking is to let the case live next to its source
- * archives on the investigator's own case drive instead of being
- * trapped inside one machine's app-install folder.
+ * language cache -- see src/workspace/workspace-paths.js) EVERY launch,
+ * never silently reopening a remembered folder -- confirmed necessary
+ * after a real incident where a remembered workspace pointed at a drive
+ * holding an incompatible database (from a different tool's processing)
+ * with zero visibility into which folder was actually about to be
+ * opened until openDatabase() crashed on it. A remembered/detected
+ * folder is still offered as a one-click default (no need to re-browse
+ * the filesystem every launch), but it's always shown and always
+ * requires an explicit confirmation, never assumed.
+ *
+ * Falls back to userData if a fresh-pick dialog is cancelled, so a bare
+ * install still works with zero clicks, but the whole point of asking
+ * is to let the case live next to its source archives on the
+ * investigator's own case drive instead of being trapped inside one
+ * machine's app-install folder.
  *
  * An install from before workspaces existed already has a
- * communications.db directly in userData -- that counts as "remembered"
- * too (and is recorded as such so future launches don't re-check the
- * filesystem for it), so upgrading never silently orphans real casework
- * behind a prompt for a new, empty folder.
+ * communications.db directly in userData -- that counts as
+ * "remembered" too (offered the same confirm-or-change choice as any
+ * other remembered folder), so upgrading never silently orphans real
+ * casework behind a prompt for a new, empty folder.
  */
-async function resolveWorkspaceDir(userDataDir) {
-  const remembered = readRememberedWorkspace(userDataDir);
-  if (remembered) return remembered;
+async function resolveWorkspaceDir(userDataDir, parentWin) {
+  const remembered =
+    readRememberedWorkspace(userDataDir) ?? (looksLikeExistingWorkspace(userDataDir) ? userDataDir : null);
 
-  if (looksLikeExistingWorkspace(userDataDir)) {
-    rememberWorkspace(userDataDir, userDataDir);
-    return userDataDir;
+  let chosen = null;
+
+  if (remembered) {
+    const confirmation = await dialog.showMessageBox(parentWin, {
+      type: 'question',
+      buttons: ['Use This Folder', 'Choose Different Folder…'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Confirm case workspace',
+      message: 'Open this case workspace?',
+      detail: remembered,
+    });
+    if (confirmation.response === 0) chosen = remembered;
   }
 
-  const result = await dialog.showOpenDialog({
-    title: 'Choose (or create) a folder for the case database',
-    message:
-      'This folder holds the search index, extracted text, and audit log. Pick a location on your case drive so it travels with your source files, not the app install.',
-    properties: ['openDirectory', 'createDirectory'],
-    defaultPath: userDataDir,
-  });
-  const chosen = result.canceled || result.filePaths.length === 0 ? userDataDir : result.filePaths[0];
+  if (!chosen) {
+    const result = await dialog.showOpenDialog(parentWin, {
+      title: 'Choose (or create) a folder for the case database',
+      message:
+        'This folder holds the search index, extracted text, and audit log. Pick a location on your case drive so it travels with your source files, not the app install.',
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: remembered ?? userDataDir,
+    });
+    chosen = result.canceled || result.filePaths.length === 0 ? (remembered ?? userDataDir) : result.filePaths[0];
+  }
+
   rememberWorkspace(userDataDir, chosen);
   return chosen;
 }
@@ -398,12 +417,65 @@ function createWindow() {
   }
 }
 
+/**
+ * A frameless "is the app alive" window shown the instant app.whenReady()
+ * fires -- before the workspace-confirmation dialog and before opening
+ * (and possibly migrating/backfilling) the case database, both of which
+ * can take a real, unpredictable amount of time against a large
+ * real-world case. Without this there was nothing on screen at all
+ * during that window: no way to tell "still loading" apart from
+ * "crashed". Closed once either the real window is up or startup has
+ * failed and an error dialog is about to explain why.
+ */
+function createSplashWindow() {
+  const splash = new BrowserWindow({
+    width: 440,
+    height: 200,
+    frame: false,
+    resizable: false,
+    center: true,
+    show: true,
+    webPreferences: { sandbox: true },
+  });
+  const html = `<!doctype html><html><body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:#1a1d23;color:#fff;-webkit-user-select:none;">
+  <div style="text-align:center;">
+    <div style="font-size:16px;font-weight:600;margin-bottom:10px;">Communications Reader</div>
+    <div style="font-size:13px;color:#9ca3af;">Starting up&hellip;</div>
+  </div>
+</body></html>`;
+  splash.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  return splash;
+}
+
 app.whenReady().then(async () => {
-  const workspaceDir = await resolveWorkspaceDir(app.getPath('userData'));
-  initStorage(workspaceDir);
-  registerWorkspaceMenu();
-  registerIpcHandlers();
-  createWindow();
+  const splash = createSplashWindow();
+  const userDataDir = app.getPath('userData');
+
+  try {
+    const workspaceDir = await resolveWorkspaceDir(userDataDir, splash);
+    initStorage(workspaceDir);
+    registerWorkspaceMenu();
+    registerIpcHandlers();
+    createWindow();
+  } catch (err) {
+    // No window ever having opened is exactly the "did it crash or is it
+    // just slow" ambiguity this whole change exists to remove --
+    // showErrorBox works even with zero BrowserWindows, so this is
+    // guaranteed to be visible instead of a silent process exit.
+    dialog.showErrorBox(
+      'Communications Reader failed to start',
+      `The workspace at:\n${currentWorkspaceDir ?? '(unknown -- failed before a workspace folder was confirmed)'}\n\n` +
+        `could not be opened:\n${err.message}\n\n` +
+        'This usually means that folder holds a database from an incompatible or corrupted install (e.g. a much older ' +
+        'version of this app, or a different tool entirely).\n\n' +
+        `To be asked again next launch instead of reusing this folder, delete this file:\n${pointerFilePath(userDataDir)}`
+    );
+    if (!splash.isDestroyed()) splash.close();
+    app.exit(1);
+    return;
+  }
+
+  if (!splash.isDestroyed()) splash.close();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
