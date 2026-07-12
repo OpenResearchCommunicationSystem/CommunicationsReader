@@ -17,7 +17,9 @@ export default function SearchPanel({ onSearch, resultCount, error, hasActiveQue
 
   return (
     <form className="search-panel" onSubmit={submit}>
+      <label className="search-panel-label" htmlFor="message-content-search-input">Message Content Search:</label>
       <input
+        id="message-content-search-input"
         type="text"
         className="search-input"
         placeholder={PLACEHOLDER}

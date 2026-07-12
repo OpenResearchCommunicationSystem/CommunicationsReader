@@ -5,7 +5,22 @@ function formatDateTime(ts) {
 
 import CollapsedStrip from './CollapsedStrip.jsx';
 
-export default function FocusPanel({ focusSet, selectedCommunicationId, onSelect, onRemove, onClear, onMaterialize, materializing, materializeStatus, style, collapsed, onToggleCollapse }) {
+export default function FocusPanel({
+  focusSet,
+  selectedCommunicationId,
+  onSelect,
+  onRemove,
+  onClear,
+  onMaterialize,
+  materializing,
+  materializeStatus,
+  onExportText,
+  exportingText,
+  exportTextStatus,
+  style,
+  collapsed,
+  onToggleCollapse,
+}) {
   if (collapsed) {
     return (
       <div className="focus-panel panel-collapsed" style={style}>
@@ -33,6 +48,29 @@ export default function FocusPanel({ focusSet, selectedCommunicationId, onSelect
           {materializeStatus.error
             ? materializeStatus.error
             : `Exported ${materializeStatus.communicationCount} message(s) from ${materializeStatus.datasetCount} dataset(s) to ${materializeStatus.outputDir}. ${materializeStatus.uniqueFiles} unique attachment file(s) written (saved ${materializeStatus.duplicatesSaved} duplicate ${materializeStatus.duplicatesSaved === 1 ? 'copy' : 'copies'}).`}
+        </div>
+      )}
+      <div className="focus-actions" title="Plain-text transcript for pasting/uploading into an external LLM chat -- not the same as the DB export above">
+        <button
+          className="focus-export-text-button"
+          onClick={() => onExportText('plain')}
+          disabled={focusSet.length === 0 || exportingText}
+        >
+          {exportingText ? 'Exporting…' : 'Export as .txt…'}
+        </button>
+        <button
+          className="focus-export-text-button"
+          onClick={() => onExportText('markup')}
+          disabled={focusSet.length === 0 || exportingText}
+        >
+          {exportingText ? 'Exporting…' : 'Export as .txt (structured)…'}
+        </button>
+      </div>
+      {exportTextStatus && (
+        <div className={`focus-materialize-status ${exportTextStatus.error ? 'error' : 'success'}`}>
+          {exportTextStatus.error
+            ? exportTextStatus.error
+            : `Exported ${exportTextStatus.communicationCount} message(s) to ${exportTextStatus.filePath}.`}
         </div>
       )}
       <ul>

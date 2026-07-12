@@ -39,6 +39,56 @@ function parseTranslationMeta(raw) {
   }
 }
 
+function CopyIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M3 10V2.5A1.5 1.5 0 0 1 4.5 1H11" stroke="currentColor" strokeWidth="1.3" />
+    </svg>
+  );
+}
+
+// Label and value are separate elements on purpose -- user-select: all on
+// a single element combining "Hash: " with the value meant a double-click/
+// drag-select grabbed the label text too, so a pasted "copy" was never
+// actually a clean hash. The copy button is the reliable path (exact
+// string, no selection-boundary quirks); user-select: all on just the
+// value span is a backup for anyone who prefers to select by hand.
+function AttachmentHash({ hash }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    if (!hash) return;
+    try {
+      await navigator.clipboard.writeText(hash);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard API can be blocked (permissions, non-secure context) --
+      // the value is still selectable by hand as a fallback.
+    }
+  }
+
+  return (
+    <div
+      className="attachment-hash-row"
+      title="This project's own content hash for this exact file (SHA-256 for archive-imported attachments). Universal, not specific to this dataset -- look it up via Attachment Hash ID Search, or write it into a filename/note, even when the original bytes never leave the workspace."
+    >
+      <span className="attachment-hash-label">Hash ID:</span>
+      {hash ? (
+        <>
+          <span className="attachment-hash-value">{hash}</span>
+          <button type="button" className="attachment-hash-copy" onClick={handleCopy} title="Copy Hash ID">
+            {copied ? '✓' : <CopyIcon />}
+          </button>
+        </>
+      ) : (
+        <span className="attachment-hash-value">(not available)</span>
+      )}
+    </div>
+  );
+}
+
 function TranslateControl({ availableTranslateLangs, translating, onTranslate, translatedText, translatedLang, translationMeta }) {
   const codes = Object.keys(availableTranslateLangs || {});
   const [sourceLang, setSourceLang] = useState(codes[0] || '');
@@ -179,6 +229,7 @@ export default function ReadingPane({
                     </button>
                   )}
                 </div>
+                <AttachmentHash hash={att.contentHash} />
                 {att.extractionStatus === 'attempted_succeeded' && (
                   <div className="attachment-extracted-text" dir="auto">
                     {att.extractedText ? att.extractedText : <em>(no text found)</em>}

@@ -68,6 +68,32 @@ export function listCommunications(db, options = {}) {
 }
 
 /**
+ * Finds every attachment with an exact contentHash match -- the "Attachment
+ * Hash ID" universal-reference lookup, deliberately separate from the
+ * Message Content Search's token_index (see token-index.js: it never
+ * indexes contentHash) and from the Reference ID lookup (a communication's
+ * own database id, meaningful only within this dataset -- see
+ * getCommunication() below). A hash can legitimately match more than one
+ * row (the same file attached to several messages), so this always returns
+ * an array. Indexed column (idx_attachments_contenthash), so this stays
+ * fast without any new index.
+ */
+export function findAttachmentsByHash(db, hash) {
+  return db
+    .prepare(
+      `
+      SELECT a.id AS attachmentId, a.filename, a.communicationId,
+             c.subject, c.timestamp, c.datasetId
+      FROM attachments a
+      JOIN communications c ON c.id = a.communicationId
+      WHERE a.contentHash = ?
+      ORDER BY c.timestamp ASC
+    `
+    )
+    .all(hash);
+}
+
+/**
  * Fetches one communication with its participants and attachments, or
  * null if no row with that id exists.
  */

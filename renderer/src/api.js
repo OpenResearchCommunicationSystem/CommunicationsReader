@@ -17,6 +17,8 @@ import {
   mockFocusClear,
   mockFocusList,
   mockFocusMaterialize,
+  mockFocusExportText,
+  mockFindAttachmentsByHash,
 } from './mockData.js';
 
 const hasRealApi = typeof window !== 'undefined' && window.api;
@@ -149,6 +151,16 @@ export async function focusList() {
 export async function focusMaterialize() {
   if (hasRealApi) return window.api.focusMaterialize();
   return mockFocusMaterialize();
+}
+
+export async function focusExportText(format) {
+  if (hasRealApi) return window.api.focusExportText(format);
+  return mockFocusExportText();
+}
+
+export async function findByHash(hash) {
+  if (hasRealApi) return window.api.findByHash(hash);
+  return mockFindAttachmentsByHash(hash);
 }
 
 export const isElectron = hasRealApi;

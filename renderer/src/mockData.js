@@ -63,6 +63,7 @@ const mockCommunications = {
         filename: 'SGS_Inspection_Certificate_Alborz_Industrial.docx',
         mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         size: 9616,
+        contentHash: '9f8c1a2e6b3d4507c1a9e2f6b8d0c3a4e7f5b1029c8d6a4f3e2b1c0d9a8f7e6b',
         extractionStatus: 'attempted_succeeded',
         extractedText:
           'SGS INSPECTION CERTIFICATE\nCertificate No: SGS-IR-2021-04521\nClient: Alborz Industrial Group\nInspection Date: 2021-03-19\nScope: KSB pump units — hydrostatic test, dimensional check, material certs\nResult: PASS — conforms to purchase order technical specification',
@@ -162,6 +163,29 @@ export function mockFocusMaterialize() {
     uniqueFiles: 0,
     duplicatesSaved: 0,
   };
+}
+
+export function mockFocusExportText() {
+  return { filePath: '(preview mode -- nothing actually written to disk)', communicationCount: mockFocusList().length };
+}
+
+export function mockFindAttachmentsByHash(hash) {
+  const results = [];
+  for (const comm of Object.values(mockCommunications)) {
+    for (const att of comm.attachments || []) {
+      if (att.contentHash === hash) {
+        results.push({
+          attachmentId: att.id,
+          filename: att.filename,
+          communicationId: comm.id,
+          subject: comm.subject,
+          timestamp: comm.timestamp,
+          datasetId: comm.datasetId,
+        });
+      }
+    }
+  }
+  return results;
 }
 
 export const mockCryptoMatches = [

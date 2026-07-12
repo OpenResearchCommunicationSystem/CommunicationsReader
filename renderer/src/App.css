@@ -120,6 +120,14 @@ body {
   flex-shrink: 0;
 }
 
+.search-panel-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .search-input {
   flex: 1;
   padding: 6px 10px;
@@ -147,6 +155,139 @@ body {
 
 .search-result-count {
   font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.reference-jump {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-alt);
+  flex-shrink: 0;
+}
+
+.reference-jump-label, .hash-search-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.reference-jump-input {
+  width: 220px;
+  padding: 5px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-family: inherit;
+}
+
+.reference-jump-button {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: white;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.reference-jump-error {
+  font-size: 12px;
+  color: var(--danger-text);
+  flex-shrink: 0;
+}
+
+.hash-search {
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-alt);
+  flex-shrink: 0;
+}
+
+.hash-search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hash-search-input {
+  flex: 1;
+  max-width: 420px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.hash-search-button {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: white;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.hash-search-error {
+  font-size: 12px;
+  color: var(--danger-text);
+  flex-shrink: 0;
+}
+
+.hash-search-results {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.hash-search-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: white;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+}
+
+.hash-search-result:hover {
+  border-color: var(--accent);
+}
+
+.hash-search-result-filename {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+.hash-search-result-subject {
+  flex: 1;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hash-search-result-date {
   color: var(--text-muted);
   flex-shrink: 0;
   white-space: nowrap;
@@ -630,6 +771,46 @@ body {
   color: var(--text-muted);
 }
 
+.attachment-hash-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.attachment-hash-label {
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.attachment-hash-value {
+  user-select: all;
+  overflow-wrap: anywhere;
+}
+
+.attachment-hash-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: white;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.attachment-hash-copy:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .extraction-badge {
   font-size: 11px;
   padding: 2px 8px;
@@ -771,7 +952,7 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
-.focus-materialize-button, .focus-clear-button {
+.focus-materialize-button, .focus-clear-button, .focus-export-text-button {
   font-size: 12px;
   padding: 5px 10px;
   border-radius: 5px;
@@ -787,7 +968,11 @@ body {
   color: white;
 }
 
-.focus-materialize-button:disabled, .focus-clear-button:disabled {
+.focus-export-text-button {
+  flex: 1;
+}
+
+.focus-materialize-button:disabled, .focus-clear-button:disabled, .focus-export-text-button:disabled {
   opacity: 0.5;
   cursor: default;
 }

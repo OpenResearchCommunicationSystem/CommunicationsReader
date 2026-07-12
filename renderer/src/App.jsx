@@ -4,6 +4,8 @@ import ThreadList from './components/ThreadList.jsx';
 import MessageList from './components/MessageList.jsx';
 import ReadingPane from './components/ReadingPane.jsx';
 import SearchPanel from './components/SearchPanel.jsx';
+import ReferenceJump from './components/ReferenceJump.jsx';
+import HashSearch from './components/HashSearch.jsx';
 import FocusPanel from './components/FocusPanel.jsx';
 import ResizeHandle from './components/ResizeHandle.jsx';
 import ActivityIndicator from './components/ActivityIndicator.jsx';
@@ -48,6 +50,10 @@ export default function App() {
   const [threads, setThreads] = useState([]);
   const [selectedThreadId, setSelectedThreadId] = useState(null);
   const [selectedCommunicationId, setSelectedCommunicationId] = useState(null);
+  // Set by handleJumpToReference below, consumed by the effect that watches
+  // `threads` -- not used for anything else, so it's fine that it's briefly
+  // stale while a dataset switch it triggered is still reloading threads.
+  const [jumpTarget, setJumpTarget] = useState(null);
   const [communication, setCommunication] = useState(null);
   const [cryptoMatches, setCryptoMatches] = useState([]);
   const [error, setError] = useState(null);
@@ -58,6 +64,8 @@ export default function App() {
   const [focusSet, setFocusSet] = useState([]);
   const [materializing, setMaterializing] = useState(false);
   const [materializeStatus, setMaterializeStatus] = useState(null);
+  const [exportingText, setExportingText] = useState(false);
+  const [exportTextStatus, setExportTextStatus] = useState(null);
   const [availableLangs, setAvailableLangs] = useState(null);
   const [selectedLangs, setSelectedLangs] = useState([]);
   const [reExtractingId, setReExtractingId] = useState(null);
@@ -83,11 +91,12 @@ export default function App() {
     if (activeImportKind === 'autopsy') return 'Importing Autopsy case…';
     if (activeImportKind === 'delete') return 'Deleting dataset…';
     if (materializing) return 'Preparing focus export…';
+    if (exportingText) return 'Preparing text export…';
     if (translatingCommunication) return 'Translating…';
     if (translatingAttachmentId != null) return 'Translating attachment…';
     if (reExtractingId != null) return 'Re-running OCR…';
     return null;
-  }, [activeImportKind, materializing, translatingCommunication, translatingAttachmentId, reExtractingId]);
+  }, [activeImportKind, materializing, exportingText, translatingCommunication, translatingAttachmentId, reExtractingId]);
 
   useEffect(() => {
     localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
@@ -156,6 +165,23 @@ export default function App() {
     }
     api.getCommunication(selectedCommunicationId).then(setCommunication).catch((err) => setError(err.message));
   }, [selectedCommunicationId]);
+
+  // Resolves a pending jump-to-reference once `threads` actually contains
+  // the target -- waits rather than acting immediately, since a jump that
+  // also had to switch dataset scope (see handleJumpToReference) leaves
+  // `threads` briefly stale from the dataset-change effect above, still
+  // mid-reload. Every communication belongs to some thread (buildThreads
+  // never drops a row, worst case a singleton), so once the right scope has
+  // loaded a match is guaranteed -- no match yet just means "not loaded
+  // yet", not "doesn't exist" (getCommunication already confirmed that).
+  useEffect(() => {
+    if (jumpTarget == null) return;
+    const thread = threads.find((t) => t.members.some((m) => m.communicationId === jumpTarget));
+    if (!thread) return;
+    setSelectedThreadId(thread.threadId);
+    setSelectedCommunicationId(jumpTarget);
+    setJumpTarget(null);
+  }, [threads, jumpTarget]);
 
   const selectedThread = useMemo(
     () => threads.find((t) => t.threadId === selectedThreadId) || null,
@@ -340,6 +366,53 @@ export default function App() {
     }
   }
 
+  async function handleExportFocusText(format) {
+    setExportingText(true);
+    setExportTextStatus(null);
+    try {
+      const result = await api.focusExportText(format);
+      setExportTextStatus(result); // null (dialog cancelled) clears any prior status
+    } catch (err) {
+      setExportTextStatus({ error: err.message });
+    } finally {
+      setExportingText(false);
+    }
+  }
+
+  // Shared by both the Reference ID lookup and Hash ID search results
+  // below -- switches to "all datasets" only when the target isn't already
+  // in scope, then hands off to the jumpTarget effect above once `threads`
+  // for the right scope has loaded.
+  function jumpToCommunication(id, datasetId) {
+    if (selectedDatasetIds.length > 0 && !selectedDatasetIds.includes(datasetId)) {
+      setSelectedDatasetIds([]);
+    }
+    setJumpTarget(id);
+  }
+
+  // The "comm-N" Reference IDs written into every exported message (see
+  // export-text.js) -- lets an investigator paste one straight back in,
+  // whether it came from their own notes or from something an outside LLM
+  // said about the export.
+  async function handleJumpToReference(id) {
+    const comm = await api.getCommunication(id).catch(() => null);
+    if (!comm) return { error: `No message found with Reference ID ${id}.` };
+    jumpToCommunication(comm.id, comm.datasetId);
+    return null;
+  }
+
+  // Attachment Hash ID search -- deliberately separate from Message Content
+  // Search (the token_index full-text search) and from Reference ID lookup
+  // above. A content hash is universal, so this always searches everything
+  // imported, not just the currently-selected dataset(s).
+  async function handleHashSearch(hash) {
+    return api.findByHash(hash);
+  }
+
+  function handleSelectHashResult(result) {
+    jumpToCommunication(result.communicationId, result.datasetId);
+  }
+
   async function handleSearch(query) {
     setSearchQuery(query);
     if (!query || !query.trim()) {
@@ -386,6 +459,8 @@ export default function App() {
         error={searchError}
         hasActiveQuery={Boolean(searchQuery && searchQuery.trim())}
       />
+      <ReferenceJump onJump={handleJumpToReference} />
+      <HashSearch onSearch={handleHashSearch} onSelectResult={handleSelectHashResult} />
       <div className="app-body">
         <DatasetPanel
           datasets={datasets}
@@ -450,6 +525,9 @@ export default function App() {
           onMaterialize={handleMaterializeFocus}
           materializing={materializing}
           materializeStatus={materializeStatus}
+          onExportText={handleExportFocusText}
+          exportingText={exportingText}
+          exportTextStatus={exportTextStatus}
           style={colStyle('focus')}
           collapsed={layout.focus.collapsed}
           onToggleCollapse={() => toggleCollapse('focus')}

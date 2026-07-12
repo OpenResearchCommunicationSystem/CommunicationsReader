@@ -25,4 +25,6 @@ contextBridge.exposeInMainWorld('api', {
   focusClear: () => ipcRenderer.invoke('focus-clear'),
   focusList: () => ipcRenderer.invoke('focus-list'),
   focusMaterialize: () => ipcRenderer.invoke('focus-materialize'),
+  focusExportText: (format) => ipcRenderer.invoke('focus-export-text', format),
+  findByHash: (hash) => ipcRenderer.invoke('find-by-hash', hash),
 });

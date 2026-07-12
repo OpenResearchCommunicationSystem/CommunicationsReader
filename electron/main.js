@@ -13,7 +13,7 @@ import {
   looksLikeExistingWorkspace,
 } from '../src/workspace/workspace-paths.js';
 import { insertImportResult } from '../src/db/insert.js';
-import { listDatasets, listCommunications, getCommunication as dbGetCommunication, getCryptoMatches } from '../src/db/query.js';
+import { listDatasets, listCommunications, getCommunication as dbGetCommunication, getCryptoMatches, findAttachmentsByHash } from '../src/db/query.js';
 import { getThreadsForDatasets } from '../src/db/thread-query.js';
 import { deleteDataset } from '../src/db/delete-dataset.js';
 import { importArchive } from '../src/parser/index.js';
@@ -27,6 +27,7 @@ import { hashFileStreaming } from '../src/parser/hash.js';
 import { appendEvent } from '../src/audit/audit-log.js';
 import { addToFocusSet, removeFromFocusSet, clearFocusSet, listFocusSet } from '../src/db/focus-set.js';
 import { materializeFocusSet } from '../src/db/materialize.js';
+import { formatFocusSetText } from '../src/db/export-text.js';
 import { persistThreads } from '../src/threading/persist-threads.js';
 import { importAutopsyCase } from '../src/import-autopsy/import-autopsy-case.js';
 
@@ -325,6 +326,12 @@ function registerIpcHandlers() {
 
   ipcMain.handle('run-search', (_event, { datasetIds, query }) => runSearch(db, { datasetIds, query }));
 
+  // Attachment Hash ID search -- deliberately separate from run-search
+  // above (Message Content Search) and get-communication (Reference ID
+  // lookup). Not scoped to the current dataset filter -- a content hash is
+  // a universal reference, so this always searches everything imported.
+  ipcMain.handle('find-by-hash', (_event, hash) => findAttachmentsByHash(db, hash));
+
   // Deliberately never copies the attachment's original bytes out of the
   // app -- only the already-extracted/OCR'd text. Raw-file export was
   // removed on request: the user judged handing back a still-live,
@@ -374,6 +381,28 @@ function registerIpcHandlers() {
     if (result.canceled || result.filePaths.length === 0) return null;
 
     return materializeFocusSet(db, result.filePaths[0]);
+  });
+
+  // Text-transcript export, distinct from focus-materialize above: this
+  // produces a single portable .txt file meant to be pasted/uploaded into an
+  // external LLM chat interface, not a reopenable app database. format is
+  // 'plain' or 'markup' -- both always save as .txt (see export-text.js).
+  ipcMain.handle('focus-export-text', async (_event, format) => {
+    const { text, communicationCount } = formatFocusSetText(db, { format });
+
+    const defaultPath = format === 'markup' ? 'focus-set.structured.txt' : 'focus-set.txt';
+    const result = await dialog.showSaveDialog({ title: 'Export focus set as text', defaultPath });
+    if (result.canceled || !result.filePath) return null;
+
+    await fs.writeFile(result.filePath, text, 'utf8');
+
+    appendEvent(db, {
+      eventType: 'export_created',
+      subjectRef: result.filePath,
+      payload: { communicationCount, exportedTo: result.filePath, exportKind: `focus_set_text_${format}` },
+    });
+
+    return { filePath: result.filePath, communicationCount };
   });
 
   ipcMain.handle('delete-dataset', async (event, datasetId) => {
