@@ -34,6 +34,12 @@ export default function HashSearch({ onSearch, onSelectResult }) {
     }
   }
 
+  function clear() {
+    setValue('');
+    setResults(null);
+    setError(null);
+  }
+
   return (
     <form className="hash-search" onSubmit={submit}>
       <div className="hash-search-row">
@@ -47,6 +53,9 @@ export default function HashSearch({ onSearch, onSelectResult }) {
           onChange={(e) => setValue(e.target.value)}
         />
         <button type="submit" className="hash-search-button">Search</button>
+        {(value || results || error) && (
+          <button type="button" className="hash-search-clear-button" onClick={clear}>Clear</button>
+        )}
         {error && <span className="hash-search-error">{error}</span>}
       </div>
       {results && results.length > 0 && (

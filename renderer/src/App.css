@@ -187,7 +187,7 @@ body {
   font-family: inherit;
 }
 
-.reference-jump-button {
+.reference-jump-button, .reference-jump-clear-button, .hash-search-clear-button {
   font-size: 12px;
   padding: 4px 10px;
   border-radius: 5px;

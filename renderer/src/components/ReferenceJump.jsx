@@ -33,6 +33,11 @@ export default function ReferenceJump({ onJump }) {
     setError(result?.error || null);
   }
 
+  function clear() {
+    setValue('');
+    setError(null);
+  }
+
   return (
     <form className="reference-jump" onSubmit={submit} title="Paste a Reference ID from an exported transcript to reopen that exact message">
       <label className="reference-jump-label" htmlFor="reference-jump-input">Dataset Reference ID Search:</label>
@@ -45,6 +50,9 @@ export default function ReferenceJump({ onJump }) {
         onChange={(e) => setValue(e.target.value)}
       />
       <button type="submit" className="reference-jump-button">Go</button>
+      {(value || error) && (
+        <button type="button" className="reference-jump-clear-button" onClick={clear}>Clear</button>
+      )}
       {error && <span className="reference-jump-error">{error}</span>}
     </form>
   );
