@@ -9,7 +9,7 @@ import { readRememberedWorkspace, rememberWorkspace, pointerFilePath } from '../
 import {
   workspaceDbPath,
   workspaceAttachmentsDir,
-  workspaceTessdataCacheDir,
+  workspaceAiConfigPath,
   looksLikeExistingWorkspace,
 } from '../src/workspace/workspace-paths.js';
 import { insertImportResult } from '../src/db/insert.js';
@@ -106,9 +106,9 @@ function initStorage(workspaceDir) {
   currentWorkspaceDir = workspaceDir;
   const dbPath = workspaceDbPath(workspaceDir);
   attachmentsRootDir = workspaceAttachmentsDir(workspaceDir);
-  // src/extract/ocr.js's traineddata cache must live outside the
-  // (read-only, once packaged) app directory -- see its own comment.
-  process.env.TESSDATA_CACHE_DIR = workspaceTessdataCacheDir(workspaceDir);
+  // src/ai-assist/config.js resolves this lazily -- see its own comment
+  // for why it can't just be imported and resolved eagerly.
+  process.env.AI_CONFIG_PATH = workspaceAiConfigPath(workspaceDir);
   db = openDatabase(dbPath);
   appendEvent(db, {
     eventType: 'app_launch',

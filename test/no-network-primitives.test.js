@@ -24,15 +24,25 @@ const SCAN_ROOTS = ['electron', 'src', 'renderer/src', 'scripts'];
 const THIS_FILE_NAME = 'no-network-primitives.test.js';
 
 // Dev-machine-only tooling that legitimately needs network access, same
-// category as `npm install` itself needing network -- never runs on the
-// investigator's air-gapped machine, never ships in the packaged exe (not
-// listed in package.json's build.files), and is the ONLY way to vendor
-// third-party ONNX model weights that have no npm package (see that
-// script's own header comment and the plan doc's model-bundling section).
-// This is a narrow, explicitly-reasoned exception, not a general carve-out
-// for scripts/ -- any other file in scripts/ is still held to the same
-// zero-network bar as the shipped app.
+// category as `npm install` itself needing network. Kept even after the
+// 2026-11 AI-API switch below made local ONNX model vendoring obsolete,
+// in case an older workspace/build still references it; harmless either
+// way since it never ships in the packaged exe (not listed in
+// package.json's build.files).
 const NETWORK_ALLOWED_FILES = new Set(['fetch-translation-models.mjs']);
+
+// src/ai-assist/ is the ONE deliberate, scoped exception to this
+// project's zero-network rule, added 2026-11 per the investigator's own
+// decision to trim the bundled Tesseract OCR + local ONNX translation
+// models in favor of calling out to an AI API the investigator's
+// organization has approved (OpenAI/Grok/a local server/GenAI.mil/etc --
+// see that directory's own comments). This still only ever runs when the
+// investigator has configured an endpoint (src/ai-assist/config.js); the
+// app's core -- parsing, search, threading, crypto-detect, Focus Set,
+// audit log -- never imports this directory and still runs with zero
+// network access. Any OTHER file anywhere in SCAN_ROOTS is still held to
+// the same zero-network bar as before.
+const NETWORK_ALLOWED_DIR_PREFIXES = ['ai-assist' + path.sep];
 
 const FORBIDDEN_PATTERNS = [
   { name: 'fetch(', re: /\bfetch\s*\(/ },
@@ -55,6 +65,8 @@ test('no first-party source file contains a network primitive', () => {
     // itself.
     if (path.basename(filePath) === THIS_FILE_NAME) continue;
     if (NETWORK_ALLOWED_FILES.has(path.basename(filePath))) continue;
+    const relPath = path.relative(repoRoot, filePath);
+    if (NETWORK_ALLOWED_DIR_PREFIXES.some((prefix) => relPath.includes(path.sep + prefix) || relPath.startsWith(prefix))) continue;
     for (const { name, re } of FORBIDDEN_PATTERNS) {
       if (re.test(content)) {
         violations.push(`${path.relative(repoRoot, filePath)}: contains forbidden pattern "${name}"`);

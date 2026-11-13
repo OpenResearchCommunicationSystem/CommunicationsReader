@@ -1,8 +1,17 @@
-import { test } from 'node:test';
+import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../src/db/schema.js';
 import { insertDataset } from '../src/db/insert.js';
-import { translateCommunication, translateAttachment } from '../src/translate/translate-record.js';
+
+// See test/translate.test.js's header -- same AI-API mock boundary,
+// needed here too since translate-record.js calls through translate.js.
+mock.module('../src/ai-assist/index.js', {
+  namedExports: {
+    translateChunkViaAi: async (text) => ({ text: `[EN] ${text}`, meta: { translationEngine: 'ai:mock:test' } }),
+  },
+});
+
+const { translateCommunication, translateAttachment } = await import('../src/translate/translate-record.js');
 
 function insertCommunication(db, datasetId, bodyText) {
   const res = db

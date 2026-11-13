@@ -1,28 +1,47 @@
-import { test, after } from 'node:test';
+import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractImageOcr, terminateOcrWorker } from '../src/extract/ocr.js';
 import { renderTextToPng } from './fixtures/render-text-png.js';
 import { writeBufferToTemp } from './helpers/temp-file.js';
 
-// Real end-to-end OCR (via a hand-rolled bitmap-font PNG, not a mocked
-// Tesseract) -- deliberately not gated behind an opt-in env var, since
-// this is the single highest-risk part of the whole milestone (the
-// project's hard "no network calls" constraint) and running it for real
-// on every test run is the only way to actually prove Tesseract never
-// reaches out to a CDN for its worker/core/traineddata.
-test('extractImageOcr reads real text from a generated image, using only local traineddata', async () => {
+// AI-API-backed since the 2026-11 switch away from bundled Tesseract
+// (see src/extract/ocr.js) -- mocked at the ai-assist boundary, same
+// spirit as test/translate.test.js. This exercises ocr.js's own logic
+// (magic-byte sniffing before ever calling out, mime-type detection, the
+// "no endpoint configured" error path) rather than real OCR quality,
+// which depends on whichever endpoint the investigator configures.
+let lastCall = null;
+mock.module('../src/ai-assist/index.js', {
+  namedExports: {
+    ocrImageViaAi: async (buf, mimeType) => {
+      lastCall = { mimeType, byteLength: buf.length };
+      return { text: 'HELLO', meta: { ocrEngine: 'ai:mock:test', ocrConfidenceMean: null } };
+    },
+  },
+});
+
+const { extractImageOcr } = await import('../src/extract/ocr.js');
+
+test('extractImageOcr sniffs the real image format and delegates to the configured AI endpoint', async () => {
   const png = renderTextToPng('HELLO');
   const { filePath, cleanup } = await writeBufferToTemp(png, 'sample.png');
   try {
     const result = await extractImageOcr(filePath);
-    assert.ok(result.text.toUpperCase().includes('HELLO'));
-    assert.equal(result.meta.ocrEngine, 'tesseract.js');
-    assert.equal(typeof result.meta.ocrConfidenceMean, 'number');
+    assert.equal(result.text, 'HELLO');
+    assert.equal(result.meta.ocrEngine, 'ai:mock:test');
+    assert.equal(lastCall.mimeType, 'image/png');
+    assert.ok(lastCall.byteLength > 0);
   } finally {
     await cleanup();
   }
 });
 
-after(async () => {
-  await terminateOcrWorker();
+test('extractImageOcr rejects a file that does not look like a supported image before calling the AI endpoint', async () => {
+  lastCall = null;
+  const { filePath, cleanup } = await writeBufferToTemp(Buffer.from('not an image'), 'fake.png');
+  try {
+    await assert.rejects(() => extractImageOcr(filePath), /does not look like a supported image format/);
+    assert.equal(lastCall, null, 'should never have called the AI endpoint for a non-image file');
+  } finally {
+    await cleanup();
+  }
 });
