@@ -1,11 +1,30 @@
-import { test, after } from 'node:test';
+import { test, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { openDatabase } from '../src/db/schema.js';
-import { insertDataset } from '../src/db/insert.js';
-import { runExtraction } from '../src/extract/run-extraction.js';
-import { terminateOcrWorker } from '../src/extract/ocr.js';
 import { buildMinimalDocx } from './fixtures/generate-office-fixtures.js';
+import { renderTextToPng } from './fixtures/render-text-png.js';
 import { writeBufferToTemp } from './helpers/temp-file.js';
+
+// See test/translate.test.js's header for why this mock boundary exists
+// (OCR is AI-API-backed since 2026-11, not a local model). Registered
+// BEFORE the dynamic imports below, not as static imports at file top --
+// a static import of run-extraction.js/ocr.js would resolve (and lock
+// in) the real ai-assist/index.js during ESM hoisting, before this
+// mock.module() call ever runs.
+let ocrCallCount = 0;
+mock.module('../src/ai-assist/index.js', {
+  namedExports: {
+    ocrImageViaAi: async () => {
+      ocrCallCount++;
+      return { text: 'HELLO', meta: { ocrEngine: 'ai:mock:test', ocrConfidenceMean: null } };
+    },
+    translateChunkViaAi: async (text) => ({ text: `[EN] ${text}`, meta: { translationEngine: 'ai:mock:test' } }),
+  },
+});
+
+const { openDatabase } = await import('../src/db/schema.js');
+const { insertDataset } = await import('../src/db/insert.js');
+const { runExtraction } = await import('../src/extract/run-extraction.js');
+const { terminateOcrWorker } = await import('../src/extract/ocr.js');
 
 function insertBareCommunication(db, datasetId) {
   const res = db
@@ -161,6 +180,64 @@ test('runExtraction reuses the result for byte-identical attachments (contentHas
     assert.equal(forwardedMeta.dedupedFromAttachmentId, originalId);
   } finally {
     await cleanupDocx();
+    db.close();
+  }
+});
+
+test('runExtraction never reaches the AI-backed OCR path when includeImages is false (import-time default)', async () => {
+  const db = openDatabase(':memory:');
+  const datasetId = insertDataset(db, { sourceType: 'email-eml', originalPath: 'x.zip' });
+  const communicationId = insertBareCommunication(db, datasetId);
+
+  const { filePath: docxPath, cleanup: cleanupDocx } = await writeBufferToTemp(
+    buildMinimalDocx('deterministic extraction still runs'),
+    'report.docx'
+  );
+  const docxAttachmentId = insertAttachment(db, communicationId, {
+    filename: 'report.docx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    savedPath: docxPath,
+  });
+  const { filePath: pngPath, cleanup: cleanupPng } = await writeBufferToTemp(renderTextToPng('HELLO'), 'photo.png');
+  const imageAttachmentId = insertAttachment(db, communicationId, {
+    filename: 'photo.png',
+    mimeType: 'image/png',
+    savedPath: pngPath,
+  });
+
+  try {
+    ocrCallCount = 0;
+    // This is the exact call shape electron/main.js's import-archive and
+    // import-autopsy-case handlers must use -- see their own comments.
+    const summary = await runExtraction(db, { datasetIds: [datasetId], includeImages: false });
+
+    assert.equal(ocrCallCount, 0, 'OCR (the AI-backed path) must never be called when includeImages is false');
+    // Only the docx counts as "attempted" -- the image was filtered out
+    // up front, not attempted-and-skipped.
+    assert.equal(summary.attempted, 1);
+    assert.equal(summary.succeeded, 1);
+
+    const docxRow = db.prepare('SELECT * FROM attachments WHERE id = ?').get(docxAttachmentId);
+    assert.equal(docxRow.extractionStatus, 'attempted_succeeded');
+
+    // Left genuinely untouched (extractedAt IS NULL), not marked
+    // not_attempted/failed -- so a later explicit OCR run still picks it
+    // up, same as any other never-yet-processed attachment.
+    const imageRow = db.prepare('SELECT * FROM attachments WHERE id = ?').get(imageAttachmentId);
+    assert.equal(imageRow.extractionStatus, 'not_attempted');
+    assert.equal(imageRow.extractedAt, null);
+
+    // The investigator's own explicit, later OCR run (includeImages left
+    // at its true default) is the only path that may reach the AI.
+    const followUp = await runExtraction(db, { datasetIds: [datasetId] });
+    assert.equal(ocrCallCount, 1);
+    assert.equal(followUp.attempted, 1);
+    const imageRowAfter = db.prepare('SELECT * FROM attachments WHERE id = ?').get(imageAttachmentId);
+    assert.equal(imageRowAfter.extractionStatus, 'attempted_succeeded');
+    assert.equal(imageRowAfter.extractedText, 'HELLO');
+  } finally {
+    await cleanupDocx();
+    await cleanupPng();
     db.close();
   }
 });

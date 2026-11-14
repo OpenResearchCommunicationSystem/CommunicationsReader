@@ -26,16 +26,32 @@ import { indexAttachmentText } from '../search/token-index.js';
  * extractAttachmentText() call itself is shared, mirroring insert.js's
  * "never silently drop a row" dedup policy.
  *
- * options: { datasetIds?: number[], force?: boolean, langs?: string[] } --
- * force re-runs extraction even for attachments already attempted (e.g.
- * after a library upgrade). langs selects which Tesseract languages OCR
- * runs against for this call (see ocr.js's AVAILABLE_LANGS); defaults to
- * ocr.js's own DEFAULT_LANGS when omitted. Non-image extractors ignore it.
+ * options: { datasetIds?: number[], force?: boolean, langs?: string[],
+ * includeImages?: boolean } -- force re-runs extraction even for
+ * attachments already attempted (e.g. after a library upgrade). langs
+ * selects which language hint OCR runs with for this call (see ocr.js's
+ * AVAILABLE_LANGS); defaults to ocr.js's own DEFAULT_LANGS when omitted.
+ * Non-image extractors ignore it.
+ *
+ * includeImages (default true) gates the ONLY AI-backed extractor in this
+ * pipeline (see ocr.js -- images now go through a paid AI endpoint, not
+ * bundled Tesseract). docx/xlsx/pptx/pdf-text-layer extraction is fully
+ * deterministic/local and always runs regardless of this flag.
+ * electron/main.js's import-archive and import-autopsy-case handlers
+ * MUST always pass includeImages: false -- confirmed directly by the
+ * investigator (2026-11): OCR must never auto-run on import, at any
+ * scale, full stop, since it now costs real money per call and a case
+ * can hold hundreds of thousands of images. Images left out this way
+ * stay extractedAt: NULL (not a terminal state), so they're still picked
+ * up whenever the investigator explicitly triggers OCR later (the
+ * 'run-extraction' IPC handler, called with includeImages left at its
+ * true default) -- this is the ONLY path that may ever reach the AI
+ * endpoint for OCR.
  *
  * Returns { attempted, succeeded, failed, deduped }.
  */
 export async function runExtraction(db, options = {}) {
-  const { datasetIds, force = false, langs } = options;
+  const { datasetIds, force = false, langs, includeImages = true } = options;
 
   let sql = `
     SELECT a.id, a.communicationId, a.filename, a.mimeType, a.savedPath, a.contentHash
@@ -64,7 +80,11 @@ export async function runExtraction(db, options = {}) {
     sql += ' WHERE ' + conditions.join(' AND ');
   }
 
-  const rows = db.prepare(sql).all(...params);
+  // Filtered up front (not just skipped when grouping) so `rows.length`
+  // below -- used for both the returned `attempted` count and the audit
+  // log payload -- never counts an image this call deliberately never
+  // touched as "attempted".
+  const rows = db.prepare(sql).all(...params).filter((row) => includeImages || classifyAttachment(row) !== 'image');
 
   const groups = new Map();
   for (const row of rows) {

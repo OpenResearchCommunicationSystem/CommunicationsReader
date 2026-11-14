@@ -221,7 +221,14 @@ function registerIpcHandlers() {
     // Extraction and crypto scanning run immediately after import so the
     // investigator doesn't need a separate step -- both are re-runnable
     // later (e.g. after a keyword-list update) via the same functions.
-    await runExtraction(db, { datasetIds: [inserted.datasetId] });
+    // includeImages: false is not optional here -- OCR is the one
+    // AI-backed extractor in this pipeline, and it must NEVER auto-run on
+    // import, confirmed directly by the investigator (2026-11): a real
+    // case can hold hundreds of thousands of images, and OCR now costs a
+    // real per-call fee. Deterministic extraction (docx/xlsx/pptx/PDF
+    // text layer) is unaffected and still runs automatically. Images stay
+    // available for the investigator's own, deliberate "Re-run OCR…".
+    await runExtraction(db, { datasetIds: [inserted.datasetId], includeImages: false });
     runScan(db, { datasetIds: [inserted.datasetId] });
     // Whole-DB rebuild (not scoped to this dataset) -- threading can link
     // messages across datasets, see persistThreads()'s own comment.
@@ -283,7 +290,9 @@ function registerIpcHandlers() {
       },
     });
 
-    await runExtraction(db, { datasetIds: [inserted.datasetId] });
+    // See the import-archive handler above for why includeImages: false
+    // is mandatory here too, not optional.
+    await runExtraction(db, { datasetIds: [inserted.datasetId], includeImages: false });
     runScan(db, { datasetIds: [inserted.datasetId] });
     persistThreads(db);
 
