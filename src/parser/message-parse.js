@@ -4,6 +4,7 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { computeRawHash, computeNormalizedHash, sha256 } from './hash.js';
 import { normalizeBody } from './body-normalize.js';
 import { verifyMessageBodyEncoding } from './encoding-detect.js';
+import { checkRawSize, AttachmentLimitError } from '../extract/limits.js';
 
 function addressToString(addressObject) {
   if (!addressObject) return null;
@@ -42,8 +43,31 @@ function hasAnyHeaderLine(rawBytes) {
   return /^[A-Za-z][A-Za-z0-9-]*:\s?/m.test(headerBlock);
 }
 
-async function extractAttachments(parsedAttachments, outputAttachmentsDir, hashPrefix) {
+// mailparser's simpleParser() already fully base64-decodes every
+// attachment into memory before we ever see it (att.content) -- that
+// one-time decode is inherent to the library and not something this
+// function can prevent. What IS this function's job, and what it did
+// NOT do before: make sure that decoded buffer never multiplies past
+// this point. Two gates, both BEFORE any disk write, in this order:
+//
+// 1. Size limit (checkRawSize, same 100MB cap the extraction pipeline
+//    already enforces -- just enforced here too, at first contact,
+//    instead of only much later when an extractor finally reads the
+//    file back off disk). An oversized attachment is never written at
+//    all -- savedPath stays null, same as any other unsupported/
+//    rejected attachment.
+// 2. Dedup by content hash, scoped to this one import run (seenHashes,
+//    shared across every message via src/parser/index.js). Confirmed
+//    real-world need: some source mail-server exports are flat dumps
+//    with no join table at all, so the exact same attachment gets
+//    physically repeated in the raw export once per message it's
+//    "attached" to -- without this, that writes the same bytes to disk
+//    (and, later, feeds the same bytes through OCR/translation) once
+//    per occurrence instead of once, period.
+async function extractAttachments(parsedAttachments, outputAttachmentsDir, hashPrefix, seenHashes) {
   const list = parsedAttachments || [];
+  const dedupMap = seenHashes ?? new Map();
+
   if (!outputAttachmentsDir) {
     return list.map((att, i) => ({
       filename: att.filename || `attachment-${i}`,
@@ -58,16 +82,37 @@ async function extractAttachments(parsedAttachments, outputAttachmentsDir, hashP
   const results = [];
   for (let i = 0; i < list.length; i++) {
     const att = list[i];
-    const safeName = (att.filename || `attachment-${i}`).replace(/[\\/:*?"<>|]/g, '_');
-    const savedPath = path.join(outputAttachmentsDir, `${hashPrefix}-${i}-${safeName}`);
-    await writeFile(savedPath, att.content);
-    results.push({
+    const size = att.size ?? att.content?.length ?? 0;
+    const contentHash = att.content ? sha256(att.content) : null;
+    const base = {
       filename: att.filename || `attachment-${i}`,
-      size: att.size ?? att.content?.length ?? 0,
+      size,
       mimeType: att.contentType || 'application/octet-stream',
-      savedPath,
-      contentHash: att.content ? sha256(att.content) : null,
-    });
+      contentHash,
+    };
+
+    if (att.content) {
+      try {
+        checkRawSize(att.content.length);
+      } catch (err) {
+        if (err instanceof AttachmentLimitError) {
+          results.push({ ...base, savedPath: null });
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    const existingPath = contentHash ? dedupMap.get(contentHash) : null;
+    let savedPath = existingPath;
+    if (!savedPath) {
+      const safeName = base.filename.replace(/[\\/:*?"<>|]/g, '_');
+      savedPath = path.join(outputAttachmentsDir, `${hashPrefix}-${i}-${safeName}`);
+      await writeFile(savedPath, att.content);
+      if (contentHash) dedupMap.set(contentHash, savedPath);
+    }
+
+    results.push({ ...base, savedPath });
   }
   return results;
 }
@@ -114,7 +159,8 @@ export async function parseMessage(rawBytes, sourceInfo, options = {}) {
   const attachments = await extractAttachments(
     parsed.attachments,
     options.outputAttachmentsDir,
-    rawHash.slice(0, 12)
+    rawHash.slice(0, 12),
+    options.seenAttachmentHashes
   );
 
   const normalizedBody = normalizeBody(bodyText);

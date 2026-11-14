@@ -75,6 +75,83 @@ async function buildEmlWithAttachment() {
   return Buffer.from(raw, 'utf8');
 }
 
+function buildEmlWithNamedAttachment(messageIdLocal, filename, base64Content) {
+  const boundary = 'BOUNDARY-' + messageIdLocal;
+  const raw =
+    'From: Sender <sender@example.com>\r\n' +
+    'To: Recipient <recipient@example.com>\r\n' +
+    `Subject: ${messageIdLocal}\r\n` +
+    `Message-ID: <${messageIdLocal}@example.com>\r\n` +
+    `Content-Type: multipart/mixed; boundary="${boundary}"\r\n` +
+    '\r\n' +
+    `--${boundary}\r\n` +
+    'Content-Type: text/plain; charset=utf-8\r\n' +
+    '\r\n' +
+    'See attached file.\r\n' +
+    `--${boundary}\r\n` +
+    `Content-Type: application/octet-stream; name="${filename}"\r\n` +
+    'Content-Transfer-Encoding: base64\r\n' +
+    `Content-Disposition: attachment; filename="${filename}"\r\n` +
+    '\r\n' +
+    base64Content +
+    '\r\n' +
+    `--${boundary}--\r\n`;
+  return Buffer.from(raw, 'utf8');
+}
+
+test('identical attachment bytes across different messages in one import are written to disk only once', async () => {
+  // Real-world motivation (2026-11): a badly-normalized source export (a
+  // flat dump with no join table) can repeat the exact same large
+  // attachment once per message it's "attached" to. seenAttachmentHashes
+  // is shared across parseMessage() calls the same way
+  // src/parser/index.js's importArchive() shares it across a whole run.
+  const sharedContent = Buffer.from('Identical bytes, forwarded to many recipients.', 'utf8').toString('base64');
+  const dir = await mkdtemp(path.join(tmpdir(), 'dedup-test-'));
+  const seenAttachmentHashes = new Map();
+  try {
+    const msg1 = await parseMessage(
+      buildEmlWithNamedAttachment('msg1', 'contract-copy-1.bin', sharedContent),
+      { type: 'eml', path: 'msg1.eml' },
+      { outputAttachmentsDir: dir, seenAttachmentHashes }
+    );
+    const msg2 = await parseMessage(
+      buildEmlWithNamedAttachment('msg2', 'contract-copy-2.bin', sharedContent),
+      { type: 'eml', path: 'msg2.eml' },
+      { outputAttachmentsDir: dir, seenAttachmentHashes }
+    );
+
+    const att1 = msg1.attachments[0];
+    const att2 = msg2.attachments[0];
+    assert.equal(att1.contentHash, att2.contentHash);
+    assert.equal(att1.savedPath, att2.savedPath, 'both occurrences must point at the SAME physical file');
+
+    const filesOnDisk = await (await import('node:fs/promises')).readdir(dir);
+    assert.equal(filesOnDisk.length, 1, 'the duplicate must never be written to disk a second time');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('an attachment over the size limit is never written to disk, savedPath stays null', async () => {
+  const oversized = Buffer.alloc(101 * 1024 * 1024, 'a').toString('base64');
+  const dir = await mkdtemp(path.join(tmpdir(), 'oversize-test-'));
+  try {
+    const normalized = await parseMessage(
+      buildEmlWithNamedAttachment('big-one', 'huge.bin', oversized),
+      { type: 'eml', path: 'big-one.eml' },
+      { outputAttachmentsDir: dir }
+    );
+    const att = normalized.attachments[0];
+    assert.equal(att.savedPath, null);
+    assert.ok(att.size > 100 * 1024 * 1024);
+
+    const filesOnDisk = await (await import('node:fs/promises')).readdir(dir);
+    assert.equal(filesOnDisk.length, 0, 'an oversized attachment must never reach disk at all');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 // Sanity check that our understanding of mailparser's attachment shape holds.
 test('sanity: mailparser exposes attachment content as a Buffer', async () => {
   const raw = await buildEmlWithAttachment();

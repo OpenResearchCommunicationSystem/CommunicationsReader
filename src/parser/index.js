@@ -32,10 +32,18 @@ export async function importArchive({ zipPath, outputAttachmentsDir }) {
   const failures = [];
   let total = 0;
 
+  // Shared across every message in this ONE import run (not reset per
+  // message) -- see message-parse.js's extractAttachments() for why.
+  // Some source exports are flat dumps with no join table at all, so the
+  // same attachment gets physically repeated once per message it's
+  // "attached" to; this map is what keeps that from writing the same
+  // bytes to disk hundreds of times over.
+  const seenAttachmentHashes = new Map();
+
   async function handle(rawBytes, sourceInfo) {
     total += 1;
     try {
-      const normalized = await parseMessage(rawBytes, sourceInfo, { outputAttachmentsDir });
+      const normalized = await parseMessage(rawBytes, sourceInfo, { outputAttachmentsDir, seenAttachmentHashes });
       messages.push(normalized);
     } catch (err) {
       failures.push({
