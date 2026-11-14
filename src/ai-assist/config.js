@@ -8,11 +8,17 @@ import fs from 'node:fs';
 // threading, crypto-detect, Focus Set, audit log) never calls this
 // module and still runs with zero network access.
 //
-// Resolved lazily from an env var (set once by electron/main.js after
-// the workspace folder is chosen, same handoff pattern as
-// TESSDATA_CACHE_DIR) rather than imported eagerly, for the same reason
-// ocr.js's getMergedLangDir() is lazy: this module may be imported
-// before app.whenReady() has had a chance to set the env var.
+// Deliberately per-MACHINE (electron.app.getPath('userData')), not
+// per-workspace: a case workspace is designed to be portable (lives
+// beside the source archive, copies cleanly to another machine or
+// external drive), and a credential must never travel along with it by
+// accident -- confirmed directly by the investigator (2026-11) after the
+// first version of this put ai-config.json inside the workspace folder.
+//
+// Resolved lazily from an env var (set once by electron/main.js in
+// app.whenReady(), before any workspace is even chosen) rather than
+// imported eagerly, for the same reason ocr.js's getMergedLangDir() is
+// lazy: this module may be imported before that env var is set.
 function configPath() {
   return process.env.AI_CONFIG_PATH || null;
 }

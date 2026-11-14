@@ -23,14 +23,6 @@ export function workspaceTessdataCacheDir(workspaceDir) {
   return path.join(workspaceDir, 'tessdata-cache');
 }
 
-// Per-workspace, never committed, never bundled -- the investigator (or a
-// future settings UI) edits this file to point OCR/translation at
-// whichever AI endpoint their organization has approved. See
-// src/ai-assist/config.js for the file's shape.
-export function workspaceAiConfigPath(workspaceDir) {
-  return path.join(workspaceDir, 'ai-config.json');
-}
-
 /**
  * True when `dir` already holds a communications.db -- used to detect an
  * install from before workspaces existed (everything used to live

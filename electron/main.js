@@ -9,7 +9,6 @@ import { readRememberedWorkspace, rememberWorkspace, pointerFilePath } from '../
 import {
   workspaceDbPath,
   workspaceAttachmentsDir,
-  workspaceAiConfigPath,
   looksLikeExistingWorkspace,
 } from '../src/workspace/workspace-paths.js';
 import { insertImportResult } from '../src/db/insert.js';
@@ -106,9 +105,6 @@ function initStorage(workspaceDir) {
   currentWorkspaceDir = workspaceDir;
   const dbPath = workspaceDbPath(workspaceDir);
   attachmentsRootDir = workspaceAttachmentsDir(workspaceDir);
-  // src/ai-assist/config.js resolves this lazily -- see its own comment
-  // for why it can't just be imported and resolved eagerly.
-  process.env.AI_CONFIG_PATH = workspaceAiConfigPath(workspaceDir);
   db = openDatabase(dbPath);
   appendEvent(db, {
     eventType: 'app_launch',
@@ -479,6 +475,15 @@ function createSplashWindow() {
 app.whenReady().then(async () => {
   const splash = createSplashWindow();
   const userDataDir = app.getPath('userData');
+  // Deliberately per-MACHINE, not per-workspace: a case workspace is
+  // designed to be portable (lives beside the source archive, copies
+  // cleanly to another machine or external drive -- see
+  // workspace-paths.js), and an API credential must never travel along
+  // with it by accident. userData is this machine's own install
+  // location, never copied as part of a case. src/ai-assist/config.js
+  // resolves this lazily -- see its own comment for why it can't just be
+  // imported and resolved eagerly.
+  process.env.AI_CONFIG_PATH = path.join(userDataDir, 'ai-config.json');
 
   try {
     const workspaceDir = await resolveWorkspaceDir(userDataDir, splash);
