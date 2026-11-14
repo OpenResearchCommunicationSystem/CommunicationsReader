@@ -22,8 +22,9 @@ const TEMPLATE = {
   baseUrl: 'https://api.openai.com/v1',
   apiKey: '',
   model: 'gpt-4o-mini',
+  orgId: '',
   _comment:
-    "Fill in baseUrl/apiKey/model for whatever AI endpoint your organization has approved -- OpenAI, Grok (https://api.x.ai/v1), a local/self-hosted OpenAI-compatible server (Ollama, LM Studio, vLLM), or an org gateway such as GenAI.mil, since all of those speak the same request shape. 'provider' currently only supports \"openai-compatible\"; leave apiKey empty to run fully offline -- OCR and translation will report unavailable instead of failing.",
+    "Fill in baseUrl/apiKey/model for whatever AI endpoint your organization has approved -- OpenAI, Grok (https://api.x.ai/v1), a local/self-hosted OpenAI-compatible server (Ollama, LM Studio, vLLM), or an org gateway such as GenAI.mil, since all of those speak the same request shape. orgId is optional (OpenAI accounts in multiple orgs only). 'provider' currently only supports \"openai-compatible\"; leave apiKey empty to run fully offline -- OCR and translation will report unavailable instead of failing.",
 };
 
 /**

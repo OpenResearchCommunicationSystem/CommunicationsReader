@@ -7,13 +7,19 @@
 // specific gateway turns out NOT to speak this shape, it needs its own
 // file under this directory (see the Anthropic/Gemini note in
 // ../index.js), not a change here.
-async function chatCompletion({ baseUrl, apiKey, model }, messages) {
+async function chatCompletion({ baseUrl, apiKey, model, orgId }, messages) {
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiKey}`,
+  };
+  // Optional -- OpenAI accounts belonging to multiple orgs may need this
+  // to bill/route to the right one. Harmless no-op for providers that
+  // don't recognize the header (Grok, local servers).
+  if (orgId) headers['OpenAI-Organization'] = orgId;
+
   const res = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers,
     body: JSON.stringify({ model, messages, temperature: 0 }),
   });
   if (!res.ok) {
