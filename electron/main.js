@@ -430,6 +430,19 @@ function registerIpcHandlers() {
   });
 }
 
+// This app never links to or opens any other URL -- no "visit our
+// website," no external image/link previews. So any attempt to navigate
+// away from the loaded app shell or open a second window is necessarily
+// either a bug or a malicious attachment/filename trying to pivot out of
+// the renderer sandbox, never a legitimate user action. Both are denied
+// unconditionally rather than allow-listed, per Electron's own security
+// checklist ("Disable or limit navigation," "Disable or limit creation of
+// new windows").
+function hardenWindowNavigation(win) {
+  win.webContents.on('will-navigate', (event) => event.preventDefault());
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
@@ -441,6 +454,7 @@ function createWindow() {
       sandbox: true,
     },
   });
+  hardenWindowNavigation(win);
 
   const devUrl = process.env.ELECTRON_START_URL;
   if (devUrl) {

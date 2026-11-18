@@ -7,13 +7,14 @@ import { scanSourceTree } from './lib/scan-source-tree.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// This app is deliberately air-gapped -- a legal condition of the
-// government casework it processes, not just a preference (see this
-// project's Claude memory: hardware_and_legal_constraints.md). A prior
-// manual audit confirmed zero network primitives anywhere in this repo;
-// this test turns that one-time audit into a durable, automated gate so
-// a future dependency bump or careless edit can't silently reintroduce
-// one.
+// This app is deliberately air-gapped -- sensitive casework (e-discovery,
+// investigative research, etc.) often can't leave the machine it's
+// processed on, so this is a hard design constraint, not just a
+// preference (see this project's Claude memory:
+// hardware_and_legal_constraints.md). A prior manual audit confirmed
+// zero network primitives anywhere in this repo; this test turns that
+// one-time audit into a durable, automated gate so a future dependency
+// bump or careless edit can't silently reintroduce one.
 //
 // Scope boundary: this only scans this repo's first-party source
 // (electron/, src/, renderer/src/, scripts/) plus package.json. It must
@@ -34,10 +35,11 @@ const NETWORK_ALLOWED_FILES = new Set(['fetch-translation-models.mjs']);
 // src/ai-assist/ is the ONE deliberate, scoped exception to this
 // project's zero-network rule, added 2026-11 per the investigator's own
 // decision to trim the bundled Tesseract OCR + local ONNX translation
-// models in favor of calling out to an AI API the investigator's
-// organization has approved (OpenAI/Grok/a local server/GenAI.mil/etc --
-// see that directory's own comments). This still only ever runs when the
-// investigator has configured an endpoint (src/ai-assist/config.js); the
+// models in favor of calling out to an AI API endpoint of the
+// investigator's choice (OpenAI/Grok/a local server/an org's own AI
+// gateway/etc -- see that directory's own comments). This still only
+// ever runs when the investigator has configured an endpoint
+// (src/ai-assist/config.js); the
 // app's core -- parsing, search, threading, crypto-detect, Focus Set,
 // audit log -- never imports this directory and still runs with zero
 // network access. Any OTHER file anywhere in SCAN_ROOTS is still held to

@@ -2,9 +2,9 @@ import { mapEmailMessageToCommunication } from './map-email.js';
 import { indexCommunicationText } from '../search/token-index.js';
 
 // Messages are committed in batches rather than one all-or-nothing
-// transaction, so an interruption (the government laptop losing power
-// or being forced to sleep mid-import, its actual real-world operating
-// constraint) never loses more than one batch's worth of work -- see
+// transaction, so an interruption (the laptop losing power or being
+// forced to sleep mid-import, a real-world operating constraint) never
+// loses more than one batch's worth of work -- see
 // insertImportResult()'s resumability design below.
 const IMPORT_BATCH_SIZE = 500;
 

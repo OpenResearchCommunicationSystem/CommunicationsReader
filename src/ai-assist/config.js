@@ -1,4 +1,25 @@
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
+
+// ocr.js's looksLikeSupportedImage() -- a plain magic-byte sniff with no
+// AI/network involvement -- is imported by magic-bytes.js and reached by
+// plenty of tests that run under plain `node --test`, never inside the
+// real Electron runtime. A static `import { safeStorage } from
+// 'electron'` breaks those: outside Electron, the 'electron' package on
+// disk is just an npm stub exporting a string (the path to the Electron
+// binary), not an object with named exports, so ESM's named-import
+// binding throws at module-load time before any test body even runs.
+// require() doesn't care that it got a string back -- destructuring off
+// it just yields undefined, which isEncryptionAvailable() below treats
+// as "not available" instead of crashing. Inside the real Electron main
+// process (this module's only real caller), Electron's own loader
+// intercepts 'electron' specially regardless of require vs import, so
+// this still resolves to the genuine safeStorage API there.
+const safeStorage = createRequire(import.meta.url)('electron')?.safeStorage;
+
+function encryptionAvailable() {
+  return typeof safeStorage?.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable();
+}
 
 // The ONE deliberate, scoped exception to this project's zero-network
 // rule (see test/no-network-primitives.test.js's NETWORK_ALLOWED_DIR_
@@ -30,8 +51,25 @@ const TEMPLATE = {
   model: 'gpt-4o-mini',
   orgId: '',
   _comment:
-    "Fill in baseUrl/apiKey/model for whatever AI endpoint your organization has approved -- OpenAI, Grok (https://api.x.ai/v1), a local/self-hosted OpenAI-compatible server (Ollama, LM Studio, vLLM), or an org gateway such as GenAI.mil, since all of those speak the same request shape. orgId is optional (OpenAI accounts in multiple orgs only). 'provider' currently only supports \"openai-compatible\"; leave apiKey empty to run fully offline -- OCR and translation will report unavailable instead of failing.",
+    "Fill in baseUrl/apiKey/model for whatever AI endpoint you've approved for this work -- OpenAI, Grok (https://api.x.ai/v1), a local/self-hosted OpenAI-compatible server (Ollama, LM Studio, vLLM), or an organization's own AI gateway, since all of those speak the same request shape. orgId is optional (OpenAI accounts in multiple orgs only). 'provider' currently only supports \"openai-compatible\"; leave apiKey empty to run fully offline -- OCR and translation will report unavailable instead of failing. Paste the real key into apiKey below and save -- the app encrypts it at rest (OS-level, via Electron safeStorage/Windows DPAPI) the next time it starts and clears this plaintext field, so it only ever sits in plaintext on disk for the one save you just did.",
 };
+
+// An API key is a credential, not case data -- it must not sit in
+// plaintext on disk indefinitely, which any serious security review of
+// this app will check for. Electron's safeStorage wraps the OS's own
+// secret store (Windows DPAPI, macOS Keychain, Linux libsecret) -- no
+// new dependency, no network call, still works air-gapped.
+// The investigator's existing workflow (hand-edit the JSON file, paste
+// the key, save) is preserved: loadAiConfig() transparently encrypts any
+// plaintext apiKey it finds and rewrites the file before returning, so
+// the only plaintext exposure is the one save the investigator just did.
+function encryptKey(apiKey) {
+  return safeStorage.encryptString(apiKey).toString('base64');
+}
+
+function decryptKey(encoded) {
+  return safeStorage.decryptString(Buffer.from(encoded, 'base64'));
+}
 
 /**
  * Returns the current AI config, or null when unconfigured (no file yet,
@@ -55,6 +93,25 @@ export function loadAiConfig() {
   } catch {
     return null;
   }
-  if (!parsed.apiKey || !parsed.baseUrl) return null;
-  return parsed;
+
+  let apiKey = parsed.apiKey || '';
+  const canEncrypt = encryptionAvailable();
+
+  if (apiKey && canEncrypt) {
+    // Plaintext key found (first save, or a hand-edit overwriting the
+    // encrypted one) -- upgrade it in place immediately, never leave it
+    // sitting in plaintext past this one load.
+    const rewritten = { ...parsed, apiKey: '', apiKeyEncrypted: encryptKey(apiKey) };
+    fs.writeFileSync(p, JSON.stringify(rewritten, null, 2), 'utf8');
+  } else if (!apiKey && parsed.apiKeyEncrypted) {
+    if (!canEncrypt) return null; // can't decrypt here; treat as unconfigured rather than crash
+    try {
+      apiKey = decryptKey(parsed.apiKeyEncrypted);
+    } catch {
+      return null; // encrypted under a different OS user/machine key -- unreadable, not a crash
+    }
+  }
+
+  if (!apiKey || !parsed.baseUrl) return null;
+  return { ...parsed, apiKey };
 }

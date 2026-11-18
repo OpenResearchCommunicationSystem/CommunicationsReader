@@ -1,12 +1,11 @@
 // Targets the OpenAI chat-completions wire format directly via fetch --
 // no vendor SDK, since that format (not any one vendor's SDK) is what's
 // actually shared across OpenAI, xAI's Grok (https://api.x.ai/v1), most
-// local/self-hosted servers (Ollama, LM Studio, vLLM), and -- per the
-// investigator's own org -- plausibly GenAI.mil, since many government
-// AI gateways are built on the same OpenAI-compatible surface. If a
-// specific gateway turns out NOT to speak this shape, it needs its own
-// file under this directory (see the Anthropic/Gemini note in
-// ../index.js), not a change here.
+// local/self-hosted servers (Ollama, LM Studio, vLLM), and plenty of
+// organizational AI gateways built on the same OpenAI-compatible
+// surface. If a specific gateway turns out NOT to speak this shape, it
+// needs its own file under this directory (see the Anthropic/Gemini
+// note in ../index.js), not a change here.
 async function chatCompletion({ baseUrl, apiKey, model, orgId }, messages) {
   const headers = {
     'Content-Type': 'application/json',
