@@ -31,6 +31,25 @@ evidentiary handling.
   you can jump back to the source.
 - **Audit log** of every import, extraction, scan, and export.
 
+## Installing it (no command line needed)
+
+Go to this repo's [Releases page](../../releases) and download the
+latest `CommunicationsReader-*-portable.exe`. That's the whole
+install: it's a portable exe, so there's nothing to run, no installer
+wizard, and no admin rights needed. Double-click it to launch the app.
+
+Windows SmartScreen may warn that the exe is from an unrecognized
+publisher (it isn't code-signed yet) -- click "More info" -> "Run
+anyway" to proceed.
+
+No internet access is needed to use the app's core features. OCR/
+translation stay disabled until you fill in `ai-config.json` (created
+on first launch, stored per-machine, not inside any case workspace)
+with an AI endpoint of your choice.
+
+If the Releases page has nothing newer than you need, or you want to
+verify a build yourself, build it from source below.
+
 ## Building it
 
 Requires Node.js (the engine this was built against ships `node:sqlite`
@@ -43,10 +62,10 @@ npm run package       # build the portable Windows exe (release/)
 npm test              # run the test suite
 ```
 
-The portable exe needs no installer and no internet access to run its
-core features. OCR/translation stay disabled until you fill in
-`ai-config.json` (created on first launch, stored per-machine, not
-inside any case workspace) with an AI endpoint of your choice.
+A maintainer cuts a new release by pushing a version tag (e.g.
+`git tag v1.0.0 && git push origin v1.0.0`); `.github/workflows/release.yml`
+then builds the exe and attaches it to a new GitHub Release
+automatically.
 
 ## Architecture notes
 

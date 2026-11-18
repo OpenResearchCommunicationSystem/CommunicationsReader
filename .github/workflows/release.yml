@@ -1,0 +1,37 @@
+name: Release
+
+# Builds the portable exe and publishes it as a GitHub Release asset, so
+# end users can download and run it directly -- no git, Node, or command
+# line required. Deliberately separate from electron-builder's own
+# `publish` config (which CONTRIBUTING.md's no-network-primitives test
+# forbids, since it wires up autoUpdater): this just uploads the file
+# GitHub Actions already builds in ci.yml.
+#
+# To cut a release: tag master with a version (e.g. `git tag v1.0.0 &&
+# git push origin v1.0.0`) or run this workflow manually from the
+# Actions tab.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run package
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.exe
+          generate_release_notes: true
