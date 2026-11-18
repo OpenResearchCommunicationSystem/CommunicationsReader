@@ -1,0 +1,48 @@
+name: CI
+
+# Runs the real test suite and the real packaging build on GitHub's own
+# infrastructure, not just on a developer's machine -- catches breakage
+# on every push/PR, and gives this project something a code-signing
+# provider's CI integration (e.g. SignPath) can eventually attach to.
+# No signing happens here yet; this workflow only builds an unsigned
+# exe and hands it back as a downloadable artifact.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
+
+  # Only on an actual push to master, not every PR branch -- packaging
+  # (and the build-number bump it triggers) is real release work, not
+  # something every throwaway PR needs to do.
+  build:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: communications-reader-portable
+          path: release/*.exe
+          retention-days: 30
