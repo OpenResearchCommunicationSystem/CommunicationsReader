@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { importAutopsyCase } from '../src/import-autopsy/import-autopsy-case.js';
@@ -7,7 +8,16 @@ import { importAutopsyCase } from '../src/import-autopsy/import-autopsy-case.js'
 const here = path.dirname(fileURLToPath(import.meta.url));
 const CASE_DIR = path.join(here, '..', 'sample-data', 'Autopsy-dummy-dataset-100', 'AutopsySample-Date');
 
-test('importAutopsyCase: recovers all 100 emails from the sample Autopsy case', async () => {
+// This fixture is a real Autopsy case export (run once, by hand, against
+// the synthetic dummy-dataset-100 -- there's no script that regenerates
+// it), kept locally under sample-data/ rather than committed, same as
+// the rest of that directory. CI and any fresh clone won't have it, so
+// these tests skip instead of hard-failing when it's absent -- they
+// still run for real on a machine that has the fixture.
+const FIXTURE_MISSING = !existsSync(path.join(CASE_DIR, 'autopsy.db'));
+const skip = FIXTURE_MISSING && 'sample-data/Autopsy-dummy-dataset-100 fixture not present (local-only, not committed)';
+
+test('importAutopsyCase: recovers all 100 emails from the sample Autopsy case', { skip }, async () => {
   const result = await importAutopsyCase({ caseDir: CASE_DIR });
 
   assert.equal(result.containerType, 'autopsy-case');
@@ -18,7 +28,7 @@ test('importAutopsyCase: recovers all 100 emails from the sample Autopsy case', 
   assert.equal(result.summary.total, 100);
 });
 
-test('importAutopsyCase: spot-checks From/To/Subject/body/Message-ID fidelity reconstructed from Autopsy attributes', async () => {
+test('importAutopsyCase: spot-checks From/To/Subject/body/Message-ID fidelity reconstructed from Autopsy attributes', { skip }, async () => {
   const result = await importAutopsyCase({ caseDir: CASE_DIR });
 
   const numune = result.messages.find((m) => m.subject === 'Numune gonderimi onayi');
@@ -33,7 +43,7 @@ test('importAutopsyCase: spot-checks From/To/Subject/body/Message-ID fidelity re
   assert.match(forwarded.from, /robert\.chen@globaltradepartners\.com/);
 });
 
-test('importAutopsyCase: attachment-bearing messages keep correct From/To/Subject even though Autopsy lacks their envelope headers', async () => {
+test('importAutopsyCase: attachment-bearing messages keep correct From/To/Subject even though Autopsy lacks their envelope headers', { skip }, async () => {
   const result = await importAutopsyCase({ caseDir: CASE_DIR });
 
   // Every message with an attachment loses Message-ID fidelity (Autopsy's
@@ -54,7 +64,7 @@ test('importAutopsyCase: attachment-bearing messages keep correct From/To/Subjec
   assert.equal(new Set(nonNullIds).size, nonNullIds.length, 'expected no two messages to collide on the same messageId');
 });
 
-test('importAutopsyCase: attachments come through as metadata/hash stubs only, no savedPath', async () => {
+test('importAutopsyCase: attachments come through as metadata/hash stubs only, no savedPath', { skip }, async () => {
   const result = await importAutopsyCase({ caseDir: CASE_DIR });
 
   const allAttachments = result.messages.flatMap((m) => m.attachments);
