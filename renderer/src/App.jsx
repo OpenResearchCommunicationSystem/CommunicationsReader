@@ -9,6 +9,7 @@ import HashSearch from './components/HashSearch.jsx';
 import FocusPanel from './components/FocusPanel.jsx';
 import ResizeHandle from './components/ResizeHandle.jsx';
 import ActivityIndicator from './components/ActivityIndicator.jsx';
+import AiSettingsPanel from './components/AiSettingsPanel.jsx';
 import * as api from './api.js';
 
 const LAYOUT_STORAGE_KEY = 'panelLayout.v1';
@@ -61,18 +62,30 @@ export default function App() {
   const [searchResults, setSearchResults] = useState(null);
   const [searchError, setSearchError] = useState(null);
   const [appInfo, setAppInfo] = useState(null);
+  const [showAiSettings, setShowAiSettings] = useState(false);
   const [focusSet, setFocusSet] = useState([]);
   const [materializing, setMaterializing] = useState(false);
   const [materializeStatus, setMaterializeStatus] = useState(null);
   const [exportingText, setExportingText] = useState(false);
   const [exportTextStatus, setExportTextStatus] = useState(null);
-  const [availableLangs, setAvailableLangs] = useState(null);
-  const [selectedLangs, setSelectedLangs] = useState([]);
-  const [reExtractingId, setReExtractingId] = useState(null);
-  const [reExtractStatus, setReExtractStatus] = useState({});
   const [availableTranslateLangs, setAvailableTranslateLangs] = useState(null);
   const [translatingCommunication, setTranslatingCommunication] = useState(false);
   const [translatingAttachmentId, setTranslatingAttachmentId] = useState(null);
+  const [imageToTextAttachmentId, setImageToTextAttachmentId] = useState(null);
+  const [threadSummary, setThreadSummary] = useState(null);
+  const [analyzingThread, setAnalyzingThread] = useState(false);
+  // Focus Set batch processing ("hand-select items, see what's pending vs
+  // already done, run only the pending ones"). batchSelection is a Set,
+  // not an array, so toggling one item's checkbox doesn't need to scan the
+  // whole set. batchPreview is non-null only while the investigator is
+  // looking at the pending/skip counts and hasn't committed yet -- set to
+  // null on any selection change so a stale preview can never be confirmed
+  // against a selection it no longer describes.
+  const [batchSelection, setBatchSelection] = useState(() => new Set());
+  const [batchSourceLang, setBatchSourceLang] = useState('');
+  const [batchPreview, setBatchPreview] = useState(null);
+  const [batchProcessing, setBatchProcessing] = useState(false);
+  const [batchResult, setBatchResult] = useState(null);
   const [layout, setLayout] = useState(loadLayout);
   // Covers the operations that previously had zero loading feedback at all
   // (import-archive, import-autopsy-case, delete-dataset) -- unlike
@@ -94,9 +107,10 @@ export default function App() {
     if (exportingText) return 'Preparing text export…';
     if (translatingCommunication) return 'Translating…';
     if (translatingAttachmentId != null) return 'Translating attachment…';
-    if (reExtractingId != null) return 'Re-running OCR…';
+    if (imageToTextAttachmentId != null) return 'Converting image to text…';
+    if (analyzingThread) return 'Analyzing thread…';
     return null;
-  }, [activeImportKind, materializing, exportingText, translatingCommunication, translatingAttachmentId, reExtractingId]);
+  }, [activeImportKind, materializing, exportingText, translatingCommunication, translatingAttachmentId, imageToTextAttachmentId, analyzingThread]);
 
   useEffect(() => {
     localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
@@ -127,19 +141,28 @@ export default function App() {
     return api.focusList().then(setFocusSet).catch((err) => setError(err.message));
   }
 
+  // Prunes any selected id that's no longer in the focus set (removed, or
+  // the whole set was cleared) -- otherwise a stale id could sit in
+  // batchSelection forever, inflating a later preview/batch-run count for
+  // an item that isn't even visible anymore.
+  useEffect(() => {
+    setBatchSelection((prev) => {
+      const liveIds = new Set(focusSet.map((c) => c.id));
+      const next = new Set([...prev].filter((id) => liveIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [focusSet]);
+
   useEffect(() => {
     api.listDatasets().then(setDatasets).catch((err) => setError(err.message));
     api.getAppInfo().then(setAppInfo).catch(() => {});
     api
-      .getAvailableLangs()
-      .then(({ available, defaultLangs }) => {
-        setAvailableLangs(available);
-        setSelectedLangs(defaultLangs);
-      })
-      .catch(() => {});
-    api
       .getAvailableTranslateLangs()
-      .then(({ available }) => setAvailableTranslateLangs(available))
+      .then(({ available }) => {
+        setAvailableTranslateLangs(available);
+        const codes = Object.keys(available || {});
+        if (codes.length > 0) setBatchSourceLang(codes[0]);
+      })
       .catch(() => {});
     loadFocusSet();
   }, []);
@@ -187,6 +210,18 @@ export default function App() {
     () => threads.find((t) => t.threadId === selectedThreadId) || null,
     [threads, selectedThreadId]
   );
+
+  // Loads whatever summary was already saved for this thread (if any) the
+  // moment it's selected -- never calls the AI endpoint on its own, only
+  // reads src/db's thread_summaries table. A fresh/re-run analysis is
+  // always an explicit click (handleAnalyzeThread below).
+  useEffect(() => {
+    if (selectedThreadId == null) {
+      setThreadSummary(null);
+      return;
+    }
+    api.getThreadSummary(selectedThreadId).then(setThreadSummary).catch(() => setThreadSummary(null));
+  }, [selectedThreadId]);
 
   // null means "no active search" (show everything, unfiltered).
   const matchedCommunicationIds = useMemo(
@@ -270,30 +305,13 @@ export default function App() {
     }
   }
 
-  function toggleLang(code) {
-    setSelectedLangs((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
-  }
-
-  async function handleReExtract(datasetId) {
-    setReExtractingId(datasetId);
-    setReExtractStatus((prev) => ({ ...prev, [datasetId]: null }));
-    try {
-      const result = await api.runExtraction({ datasetIds: [datasetId], langs: selectedLangs, force: true });
-      setReExtractStatus((prev) => ({ ...prev, [datasetId]: result }));
-    } catch (err) {
-      setReExtractStatus((prev) => ({ ...prev, [datasetId]: { error: err.message } }));
-    } finally {
-      setReExtractingId(null);
-    }
-  }
-
   async function handleTranslateCommunication(communicationId, sourceLang) {
     setTranslatingCommunication(true);
     try {
       await api.translateCommunication(communicationId, sourceLang);
       // Re-fetch rather than patch local state -- the same "trust the DB,
       // not an optimistic guess" approach every other mutating action here
-      // already takes (see handleDeleteDataset/handleReExtract).
+      // already takes (see handleDeleteDataset).
       const refreshed = await api.getCommunication(communicationId);
       setCommunication(refreshed);
     } catch (err) {
@@ -316,12 +334,105 @@ export default function App() {
     }
   }
 
+  // One image, one explicit click -- the replacement for the old
+  // dataset-wide "Re-run OCR" bulk button (removed; see src/extract/
+  // attachment-image-to-text.js). A real extraction failure/rejection
+  // is returned, not thrown (same contract as extractAttachmentText),
+  // so it shows up inline in ReadingPane via the refreshed communication
+  // rather than the top-level error banner.
+  async function handleImageToText(attachmentId) {
+    setImageToTextAttachmentId(attachmentId);
+    try {
+      await api.imageToText(attachmentId);
+      const refreshed = await api.getCommunication(selectedCommunicationId);
+      setCommunication(refreshed);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setImageToTextAttachmentId(null);
+    }
+  }
+
+  function handleToggleBatchSelection(communicationId) {
+    setBatchSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(communicationId)) next.delete(communicationId);
+      else next.add(communicationId);
+      return next;
+    });
+    setBatchPreview(null);
+    setBatchResult(null);
+  }
+
+  function handleSelectAllInFocus() {
+    setBatchSelection(new Set(focusSet.map((c) => c.id)));
+    setBatchPreview(null);
+    setBatchResult(null);
+  }
+
+  function handleSelectNoneInFocus() {
+    setBatchSelection(new Set());
+    setBatchPreview(null);
+    setBatchResult(null);
+  }
+
+  // Preview never reaches the AI endpoint -- it's a pure read of the
+  // already-loaded translatedAt/extractedText fields, server-side only so
+  // the renderer doesn't need to duplicate that skip logic. Required
+  // before every batch run: the investigator confirmed directly that no
+  // bulk AI action may run without seeing an exact count first.
+  async function handlePreviewBatch() {
+    try {
+      const preview = await api.previewFocusSelection([...batchSelection]);
+      setBatchPreview(preview);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleConfirmBatch() {
+    setBatchProcessing(true);
+    try {
+      const result = await api.translateFocusSelection([...batchSelection], batchSourceLang);
+      setBatchResult(result);
+      setBatchPreview(null);
+      await loadFocusSet();
+      // The reading pane may currently show one of the just-processed
+      // items -- refresh it so its translation shows up without having to
+      // click away and back.
+      if (selectedCommunicationId && batchSelection.has(selectedCommunicationId)) {
+        const refreshed = await api.getCommunication(selectedCommunicationId);
+        setCommunication(refreshed);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBatchProcessing(false);
+    }
+  }
+
+  function handleCancelBatchPreview() {
+    setBatchPreview(null);
+  }
+
   async function handleAddToFocus(communicationId) {
     try {
       await api.focusAdd([communicationId], 'manual');
       await loadFocusSet();
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function handleAnalyzeThread(thread) {
+    setAnalyzingThread(true);
+    try {
+      const result = await api.analyzeThread(thread.threadId, thread.members.map((m) => m.communicationId));
+      setThreadSummary(result);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAnalyzingThread(false);
     }
   }
 
@@ -447,7 +558,11 @@ export default function App() {
         )}
         {!api.isElectron && <span className="preview-badge">Preview mode (mock data)</span>}
         <ActivityIndicator label={activeOperation} />
+        <button className="ai-settings-trigger" onClick={() => setShowAiSettings(true)} title="Configure the AI endpoint used for OCR/translation">
+          AI Settings&hellip;
+        </button>
       </header>
+      {showAiSettings && <AiSettingsPanel onClose={() => setShowAiSettings(false)} />}
       {error && (
         <div className="error-banner" onClick={() => setError(null)}>
           {error} <span className="dismiss">(click to dismiss)</span>
@@ -471,12 +586,6 @@ export default function App() {
           onImportAutopsyCaseClick={handleImportAutopsyCaseClick}
           onDelete={handleDeleteDataset}
           activeImportKind={activeImportKind}
-          availableLangs={availableLangs}
-          selectedLangs={selectedLangs}
-          onToggleLang={toggleLang}
-          onReExtract={handleReExtract}
-          reExtractingId={reExtractingId}
-          reExtractStatus={reExtractStatus}
           style={colStyle('dataset')}
           collapsed={layout.dataset.collapsed}
           onToggleCollapse={() => toggleCollapse('dataset')}
@@ -499,6 +608,9 @@ export default function App() {
           matchedIds={matchedCommunicationIds}
           focusedIds={focusedIds}
           onAddToFocus={handleAddToFocus}
+          threadSummary={threadSummary}
+          analyzingThread={analyzingThread}
+          onAnalyzeThread={handleAnalyzeThread}
           style={colStyle('messages')}
           collapsed={layout.messages.collapsed}
           onToggleCollapse={() => toggleCollapse('messages')}
@@ -514,6 +626,8 @@ export default function App() {
           onTranslateAttachment={handleTranslateAttachment}
           translatingCommunication={translatingCommunication}
           translatingAttachmentId={translatingAttachmentId}
+          onImageToText={handleImageToText}
+          imageToTextAttachmentId={imageToTextAttachmentId}
         />
         <ResizeHandle onResize={(delta) => resizeColumn('focus', delta, true)} />
         <FocusPanel
@@ -528,6 +642,19 @@ export default function App() {
           onExportText={handleExportFocusText}
           exportingText={exportingText}
           exportTextStatus={exportTextStatus}
+          availableTranslateLangs={availableTranslateLangs}
+          batchSelection={batchSelection}
+          onToggleBatchSelection={handleToggleBatchSelection}
+          onSelectAllInFocus={handleSelectAllInFocus}
+          onSelectNoneInFocus={handleSelectNoneInFocus}
+          batchSourceLang={batchSourceLang}
+          onBatchSourceLangChange={setBatchSourceLang}
+          batchPreview={batchPreview}
+          onPreviewBatch={handlePreviewBatch}
+          onConfirmBatch={handleConfirmBatch}
+          onCancelBatchPreview={handleCancelBatchPreview}
+          batchProcessing={batchProcessing}
+          batchResult={batchResult}
           style={colStyle('focus')}
           collapsed={layout.focus.collapsed}
           onToggleCollapse={() => toggleCollapse('focus')}

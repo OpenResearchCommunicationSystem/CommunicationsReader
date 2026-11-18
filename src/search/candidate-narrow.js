@@ -8,6 +8,8 @@ const QUERY_FIELD_TO_INDEX_FIELD = {
   from: 'from',
   to: 'to',
   attachment: 'attachment_text',
+  filename: 'attachment_filename',
+  translation: 'body_translation',
 };
 
 function escapeLike(value) {

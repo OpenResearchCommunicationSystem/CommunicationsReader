@@ -1,5 +1,6 @@
 import { translateText } from './translate.js';
 import { appendEvent } from '../audit/audit-log.js';
+import { indexCommunicationTranslation, indexAttachmentTranslation } from '../search/token-index.js';
 
 const commStatementCache = new WeakMap();
 function getCommStatement(db) {
@@ -57,6 +58,7 @@ export async function translateCommunication(db, communicationId, sourceLang) {
     translatedAt: Date.now(),
     translationMeta: JSON.stringify(result.meta),
   });
+  indexCommunicationTranslation(db, communicationId, result.text);
 
   appendEvent(db, {
     eventType: 'translation_run',
@@ -75,7 +77,7 @@ export async function translateCommunication(db, communicationId, sourceLang) {
  * extracted text, never original bytes.
  */
 export async function translateAttachment(db, attachmentId, sourceLang) {
-  const row = db.prepare('SELECT id, extractedText FROM attachments WHERE id = ?').get(attachmentId);
+  const row = db.prepare('SELECT id, communicationId, extractedText FROM attachments WHERE id = ?').get(attachmentId);
   if (!row) {
     throw new Error(`translateAttachment: no attachment with id ${attachmentId}`);
   }
@@ -88,6 +90,7 @@ export async function translateAttachment(db, attachmentId, sourceLang) {
     translatedAt: Date.now(),
     translationMeta: JSON.stringify(result.meta),
   });
+  indexAttachmentTranslation(db, row.communicationId, attachmentId, result.text);
 
   appendEvent(db, {
     eventType: 'translation_run',

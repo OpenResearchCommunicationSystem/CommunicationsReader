@@ -18,9 +18,30 @@ function fieldSourcesFor(communication) {
   if (communication.bodyText) sources.push({ field: 'body', text: communication.bodyText });
   if (communication.fromRaw) sources.push({ field: 'from', text: communication.fromRaw });
   if (communication.toRaw) sources.push({ field: 'to', text: communication.toRaw });
+  // A translated body is searchable in its own right -- an investigator
+  // who translates a Farsi email to English still needs to find it by
+  // searching the English text, not just the untranslated original.
+  // Tagged 'translation' (the query-field name registered in
+  // query-parser.js/candidate-narrow.js), not 'body_translation' (the
+  // token_index fieldKind name) -- a Field AST node's .field is always
+  // the query-side name, and this must match it exactly for scoped
+  // searches like "translation:wallet" to re-confirm correctly against
+  // this source, the same convention 'attachment' below already follows
+  // relative to the 'attachment_text' index fieldKind.
+  if (communication.translatedText) sources.push({ field: 'translation', text: communication.translatedText });
   for (const att of communication.attachments || []) {
     if (att.extractedText) {
       sources.push({ field: 'attachment', text: att.extractedText, attachmentId: att.id, filename: att.filename });
+    }
+    if (att.translatedText) {
+      sources.push({ field: 'attachment_translation', text: att.translatedText, attachmentId: att.id, filename: att.filename });
+    }
+    // Filename is searchable regardless of whether extraction ever ran
+    // or succeeded -- mirrors src/search/token-index.js's
+    // indexAttachmentFilename(), which indexes it unconditionally at
+    // insert time, and src/search/candidate-narrow.js's 'filename' field.
+    if (att.filename) {
+      sources.push({ field: 'filename', text: att.filename, attachmentId: att.id, filename: att.filename });
     }
   }
   return sources;

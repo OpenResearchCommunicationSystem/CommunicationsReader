@@ -5,6 +5,15 @@ function formatDate(ts) {
 
 import CollapsedStrip from './CollapsedStrip.jsx';
 
+function AttachmentBadge({ count }) {
+  if (!count) return null;
+  return (
+    <span className="attachment-count-badge" title={`${count} attachment${count === 1 ? '' : 's'}`}>
+      &#128206; {count}
+    </span>
+  );
+}
+
 export default function ThreadList({ threads, selectedThreadId, onSelect, onAddThreadToFocus, style, collapsed, onToggleCollapse }) {
   if (collapsed) {
     return (
@@ -33,6 +42,7 @@ export default function ThreadList({ threads, selectedThreadId, onSelect, onAddT
                   {thread.method === 'header' ? 'Linked by headers' : thread.method === 'subject-fallback' ? 'Grouped by subject' : 'Single message'}
                 </span>
                 <span>{thread.messageCount} message{thread.messageCount === 1 ? '' : 's'}</span>
+                <AttachmentBadge count={thread.attachmentCount} />
               </div>
               <div className="thread-daterange">
                 {formatDate(thread.dateRange.start)} &ndash; {formatDate(thread.dateRange.end)}

@@ -152,6 +152,28 @@ function TranslateControl({ availableTranslateLangs, translating, onTranslate, t
   );
 }
 
+// Image to Text is the AI-vision OCR action for exactly one attachment --
+// confirmed necessary directly (2026-11) after the old dataset-wide
+// "Re-run OCR" bulk button re-ran extraction over an entire dataset (not
+// just images) with no preview or confirmation, which also meant one
+// bad run could clobber already-good extracted text across the whole
+// set. Shown only for image-kind attachments (mimeType check -- the real
+// kind/magic-byte verification happens server-side regardless), and
+// always offered, not just when nothing has been extracted yet, so a
+// garbage first result can be retried without re-importing anything.
+function ImageToTextControl({ attachmentId, running, onImageToText, alreadyExtracted }) {
+  return (
+    <button
+      className="image-to-text-button"
+      disabled={running}
+      onClick={() => onImageToText(attachmentId)}
+      title="Transcribe this image's text via the configured AI endpoint"
+    >
+      {running ? 'Converting…' : alreadyExtracted ? 'Re-run Image to Text' : 'Image to Text'}
+    </button>
+  );
+}
+
 export default function ReadingPane({
   communication,
   cryptoMatches,
@@ -161,6 +183,8 @@ export default function ReadingPane({
   onTranslateAttachment,
   translatingCommunication,
   translatingAttachmentId,
+  onImageToText,
+  imageToTextAttachmentId,
 }) {
   if (!communication) {
     return (
@@ -181,6 +205,12 @@ export default function ReadingPane({
         <div className="message-header-row"><strong>From:</strong> {communication.fromRaw || '(unknown)'}</div>
         <div className="message-header-row"><strong>To:</strong> {communication.toRaw || '(unknown)'}</div>
         <div className="message-header-row"><strong>Date:</strong> {formatDateTime(communication.timestamp)}</div>
+        {communication.attachments && communication.attachments.length > 0 && (
+          <div className="message-header-row message-header-attachments">
+            &#128206; {communication.attachments.length} attachment{communication.attachments.length === 1 ? '' : 's'}
+            {' '}({[...new Set(communication.attachments.map((a) => a.filename?.split('.').pop()?.toLowerCase() || '?'))].join(', ')})
+          </div>
+        )}
       </div>
 
       {matchesForThisMessage.length > 0 && (
@@ -215,7 +245,9 @@ export default function ReadingPane({
         <div className="attachments-section">
           <h3>Attachments ({communication.attachments.length})</h3>
           <ul className="attachments-list">
-            {communication.attachments.map((att) => (
+            {communication.attachments.map((att) => {
+              const isImage = Boolean(att.mimeType?.startsWith('image/'));
+              return (
               <li key={att.id} className="attachment-item">
                 <div className="attachment-row">
                   <span className="attachment-name">{att.filename}</span>
@@ -223,12 +255,40 @@ export default function ReadingPane({
                   <span className={`extraction-badge extraction-${att.extractionStatus}`}>
                     {EXTRACTION_LABELS[att.extractionStatus] || att.extractionStatus}
                   </span>
+                  {isImage && onImageToText && (
+                    <ImageToTextControl
+                      attachmentId={att.id}
+                      running={imageToTextAttachmentId === att.id}
+                      onImageToText={onImageToText}
+                      alreadyExtracted={att.extractionStatus === 'attempted_succeeded'}
+                    />
+                  )}
                   {att.extractionStatus === 'attempted_succeeded' && (
                     <button className="export-button" onClick={() => onExportAttachment(att.id)} title="Export the extracted/OCR'd text -- never the original file">
                       Export text&hellip;
                     </button>
                   )}
                 </div>
+                {/* quarantineStatus is a lifecycle separate from extractionStatus
+                    (see src/db/schema.js): 'pending' is the normal, unremarkable
+                    state for anything never verified (including every ordinary
+                    unsupported format), so it gets no badge at all. 'rejected'
+                    means the file's actual content didn't match what it claimed
+                    to be (or broke a size/complexity limit) and was refused
+                    before reaching an extractor -- that's forensically
+                    significant on its own, distinct from "just not supported
+                    yet", so it's the one state that gets a visibly different,
+                    explicit callout here. */}
+                {att.quarantineStatus === 'rejected' && (
+                  <div className="attachment-quarantine-flag" title="This attachment's actual content did not match what it claimed to be, or exceeded a safety limit -- it was never handed to an extractor.">
+                    &#9888; Flagged: {att.quarantineReason}
+                  </div>
+                )}
+                {att.quarantineStatus === 'error' && (
+                  <div className="attachment-quarantine-flag attachment-quarantine-flag-minor">
+                    Could not verify this file's content: {att.quarantineReason}
+                  </div>
+                )}
                 <AttachmentHash hash={att.contentHash} />
                 {att.extractionStatus === 'attempted_succeeded' && (
                   <div className="attachment-extracted-text" dir="auto">
@@ -249,7 +309,8 @@ export default function ReadingPane({
                   />
                 )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         </div>
       )}

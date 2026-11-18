@@ -5,6 +5,141 @@ function formatDateTime(ts) {
 
 import CollapsedStrip from './CollapsedStrip.jsx';
 
+// One item's "has this been translated yet" signal, shared by the body
+// row and each attachment row -- translatedAt is the same done/pending
+// marker src/translate/translate-batch.js keys off server-side, so this
+// badge and the batch preview/run counts can never disagree about what's
+// actually pending.
+function TranslationStatusBadge({ translatedAt }) {
+  return (
+    <span className={`batch-status-badge ${translatedAt ? 'done' : 'pending'}`}>
+      {translatedAt ? 'Translated' : 'Pending'}
+    </span>
+  );
+}
+
+function FocusItemStatus({ item }) {
+  // Only attachments with extracted text are ever translatable -- an
+  // attachment with nothing extracted (unsupported format, or an image,
+  // which never gets OCR'd automatically and keeps no original bytes to
+  // OCR later either) has no translation state to show at all.
+  const translatableAttachments = (item.attachments || []).filter((a) => a.extractedText);
+  return (
+    <div className="focus-item-status">
+      <div className="focus-item-status-row">
+        <span>Body</span>
+        <TranslationStatusBadge translatedAt={item.translatedAt} />
+      </div>
+      {translatableAttachments.map((a) => (
+        <div className="focus-item-status-row" key={a.id}>
+          <span title={a.filename}>{a.filename}</span>
+          <TranslationStatusBadge translatedAt={a.translatedAt} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BatchProcessingControls({
+  focusSet,
+  availableTranslateLangs,
+  batchSelection,
+  onToggleBatchSelection,
+  onSelectAllInFocus,
+  onSelectNoneInFocus,
+  batchSourceLang,
+  onBatchSourceLangChange,
+  batchPreview,
+  onPreviewBatch,
+  onConfirmBatch,
+  onCancelBatchPreview,
+  batchProcessing,
+  batchResult,
+}) {
+  const codes = Object.keys(availableTranslateLangs || {});
+  if (codes.length === 0 || focusSet.length === 0) return null;
+
+  const selectedCount = batchSelection.size;
+
+  return (
+    <div className="batch-processing">
+      <div className="batch-processing-header">
+        <strong>Send selected for processing</strong>
+        <span className="batch-selection-links">
+          <button type="button" className="link-button" onClick={onSelectAllInFocus}>All</button>
+          <button type="button" className="link-button" onClick={onSelectNoneInFocus}>None</button>
+        </span>
+      </div>
+      <div className="batch-processing-row">
+        <select value={batchSourceLang} onChange={(e) => onBatchSourceLangChange(e.target.value)} disabled={batchProcessing}>
+          {codes.map((code) => (
+            <option key={code} value={code}>{availableTranslateLangs[code]}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="batch-preview-button"
+          disabled={selectedCount === 0 || batchProcessing}
+          onClick={onPreviewBatch}
+        >
+          Preview ({selectedCount} selected)&hellip;
+        </button>
+      </div>
+
+      {batchPreview && (
+        <div className="batch-preview">
+          <p>
+            <strong>{batchPreview.bodiesPending}</strong> message bod{batchPreview.bodiesPending === 1 ? 'y' : 'ies'} and{' '}
+            <strong>{batchPreview.attachmentsPending}</strong> attachment text
+            {batchPreview.attachmentsPending === 1 ? '' : 's'} will actually be sent to the AI endpoint.
+          </p>
+          {batchPreview.attachmentsDeduped > 0 && (
+            <p className="batch-preview-deduped">
+              {batchPreview.attachmentsDeduped} more attachment{batchPreview.attachmentsDeduped === 1 ? '' : 's'} will be
+              filled in for free (identical content, same hash as one already being translated above) -- never sent
+              twice.
+            </p>
+          )}
+          {(batchPreview.bodiesSkipped > 0 || batchPreview.attachmentsSkipped > 0) && (
+            <p className="batch-preview-skipped">
+              Already translated, will be skipped: {batchPreview.bodiesSkipped} bod
+              {batchPreview.bodiesSkipped === 1 ? 'y' : 'ies'}, {batchPreview.attachmentsSkipped} attachment text
+              {batchPreview.attachmentsSkipped === 1 ? '' : 's'}.
+            </p>
+          )}
+          {batchPreview.bodiesPending === 0 && batchPreview.attachmentsPending === 0 && batchPreview.attachmentsDeduped === 0 ? (
+            <p className="batch-preview-nothing">Nothing to do -- everything selected is already translated.</p>
+          ) : (
+            <div className="batch-preview-actions">
+              <button type="button" onClick={onConfirmBatch} disabled={batchProcessing}>
+                {batchProcessing ? 'Processing…' : 'Confirm & run'}
+              </button>
+              <button type="button" onClick={onCancelBatchPreview} disabled={batchProcessing}>Cancel</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {batchResult && !batchPreview && (
+        <div className="batch-result">
+          Done: {batchResult.bodiesTranslated} bod{batchResult.bodiesTranslated === 1 ? 'y' : 'ies'} and{' '}
+          {batchResult.attachmentsTranslated} attachment text{batchResult.attachmentsTranslated === 1 ? '' : 's'} actually
+          sent to the AI endpoint
+          {batchResult.attachmentsDeduped > 0 && <> (plus {batchResult.attachmentsDeduped} filled in free via dedup)</>}
+          ({batchResult.bodiesSkipped + batchResult.attachmentsSkipped} already done, skipped).
+          {batchResult.errors.length > 0 && (
+            <ul className="batch-result-errors">
+              {batchResult.errors.map((e, i) => (
+                <li key={i}>{e.type} #{e.id}: {e.message}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function FocusPanel({
   focusSet,
   selectedCommunicationId,
@@ -17,6 +152,19 @@ export default function FocusPanel({
   onExportText,
   exportingText,
   exportTextStatus,
+  availableTranslateLangs,
+  batchSelection,
+  onToggleBatchSelection,
+  onSelectAllInFocus,
+  onSelectNoneInFocus,
+  batchSourceLang,
+  onBatchSourceLangChange,
+  batchPreview,
+  onPreviewBatch,
+  onConfirmBatch,
+  onCancelBatchPreview,
+  batchProcessing,
+  batchResult,
   style,
   collapsed,
   onToggleCollapse,
@@ -73,19 +221,45 @@ export default function FocusPanel({
             : `Exported ${exportTextStatus.communicationCount} message(s) to ${exportTextStatus.filePath}.`}
         </div>
       )}
+      <BatchProcessingControls
+        focusSet={focusSet}
+        availableTranslateLangs={availableTranslateLangs}
+        batchSelection={batchSelection}
+        onToggleBatchSelection={onToggleBatchSelection}
+        onSelectAllInFocus={onSelectAllInFocus}
+        onSelectNoneInFocus={onSelectNoneInFocus}
+        batchSourceLang={batchSourceLang}
+        onBatchSourceLangChange={onBatchSourceLangChange}
+        batchPreview={batchPreview}
+        onPreviewBatch={onPreviewBatch}
+        onConfirmBatch={onConfirmBatch}
+        onCancelBatchPreview={onCancelBatchPreview}
+        batchProcessing={batchProcessing}
+        batchResult={batchResult}
+      />
       <ul>
         {focusSet.map((item) => (
           <li key={item.id}>
-            <button
-              className={`focus-row ${item.id === selectedCommunicationId ? 'selected' : ''}`}
-              onClick={() => onSelect(item.id)}
-            >
-              <div className="focus-subject">{item.subject || '(no subject)'}</div>
-              <div className="focus-date">{formatDateTime(item.timestamp)}</div>
-            </button>
-            <button className="remove-from-focus-button icon-only" onClick={() => onRemove(item.id)} title="Remove from focus">
-              &times;
-            </button>
+            <div className="focus-row-wrapper">
+              <input
+                type="checkbox"
+                className="focus-select-checkbox"
+                checked={batchSelection.has(item.id)}
+                onChange={() => onToggleBatchSelection(item.id)}
+                title="Select for batch processing"
+              />
+              <button
+                className={`focus-row ${item.id === selectedCommunicationId ? 'selected' : ''}`}
+                onClick={() => onSelect(item.id)}
+              >
+                <div className="focus-subject">{item.subject || '(no subject)'}</div>
+                <div className="focus-date">{formatDateTime(item.timestamp)}</div>
+              </button>
+              <button className="remove-from-focus-button icon-only" onClick={() => onRemove(item.id)} title="Remove from focus">
+                &times;
+              </button>
+            </div>
+            <FocusItemStatus item={item} />
           </li>
         ))}
         {focusSet.length === 0 && (

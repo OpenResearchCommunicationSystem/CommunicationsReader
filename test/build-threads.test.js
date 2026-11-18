@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildThreads } from '../src/threading/build-threads.js';
 
-function comm({ id, subject, messageId = null, inReplyTo = null, references = [], timestamp = 0, participants = [], datasetId = 1 }) {
+function comm({ id, subject, messageId = null, inReplyTo = null, references = [], timestamp = 0, participants = [], datasetId = 1, attachments = [] }) {
   return {
     id,
     datasetId,
@@ -12,6 +12,7 @@ function comm({ id, subject, messageId = null, inReplyTo = null, references = []
     referencesJson: JSON.stringify(references),
     timestamp,
     participants: participants.map((identifier, i) => ({ role: i === 0 ? 'from' : 'to', identifier, sortOrder: i })),
+    attachments,
   };
 }
 
@@ -79,4 +80,28 @@ test('dateRange and participants are computed correctly across a thread', () => 
 
 test('empty input returns no threads', () => {
   assert.deepEqual(buildThreads([]), []);
+});
+
+test('thread and member-level attachment counts/kinds roll up correctly', () => {
+  const withTwo = comm({
+    id: 7,
+    subject: 'Re: Shipment',
+    inReplyTo: 'base@x',
+    messageId: 'followup@x',
+    participants: ['a@x.com'],
+    attachments: [
+      { filename: 'invoice.pdf', mimeType: 'application/pdf' },
+      { filename: 'photo.jpg', mimeType: 'image/jpeg' },
+    ],
+  });
+  const withNone = comm({ id: 8, subject: 'Re: Shipment', messageId: 'base@x', participants: ['a@x.com'] });
+
+  const threads = buildThreads([withTwo, withNone]);
+  assert.equal(threads.length, 1);
+  assert.equal(threads[0].attachmentCount, 2, 'summed across every member, not just one');
+
+  const memberWithAtts = threads[0].members.find((m) => m.communicationId === 7);
+  const memberWithout = threads[0].members.find((m) => m.communicationId === 8);
+  assert.deepEqual(memberWithAtts.attachments, { count: 2, kinds: ['pdf', 'image'] });
+  assert.deepEqual(memberWithout.attachments, { count: 0, kinds: [] });
 });

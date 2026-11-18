@@ -17,9 +17,13 @@ import { getThreadsForDatasets } from '../src/db/thread-query.js';
 import { deleteDataset } from '../src/db/delete-dataset.js';
 import { importArchive } from '../src/parser/index.js';
 import { runExtraction } from '../src/extract/run-extraction.js';
-import { AVAILABLE_LANGS, DEFAULT_LANGS } from '../src/extract/ocr.js';
+import { imageToText } from '../src/extract/attachment-image-to-text.js';
+import { purgeAttachmentOriginals } from '../src/db/purge-attachment-originals.js';
 import { AVAILABLE_LANGS as AVAILABLE_TRANSLATE_LANGS } from '../src/translate/translate.js';
 import { translateCommunication, translateAttachment } from '../src/translate/translate-record.js';
+import { translateFocusSelection, previewFocusSelection } from '../src/translate/translate-batch.js';
+import { analyzeThread, getThreadSummary } from '../src/threading/summarize-thread.js';
+import { getAiConfigStatus, saveAiConfig } from '../src/ai-assist/config.js';
 import { runScan } from '../src/crypto-detect/run-scan.js';
 import { runSearch } from '../src/search/run-search.js';
 import { hashFileStreaming } from '../src/parser/hash.js';
@@ -219,16 +223,27 @@ function registerIpcHandlers() {
     });
 
     // Extraction and crypto scanning run immediately after import so the
-    // investigator doesn't need a separate step -- both are re-runnable
-    // later (e.g. after a keyword-list update) via the same functions.
-    // includeImages: false is not optional here -- OCR is the one
-    // AI-backed extractor in this pipeline, and it must NEVER auto-run on
-    // import, confirmed directly by the investigator (2026-11): a real
-    // case can hold hundreds of thousands of images, and OCR now costs a
-    // real per-call fee. Deterministic extraction (docx/xlsx/pptx/PDF
-    // text layer) is unaffected and still runs automatically. Images stay
-    // available for the investigator's own, deliberate "Re-run OCR…".
+    // investigator doesn't need a separate step. includeImages: false is
+    // not optional here -- OCR is the one AI-backed extractor in this
+    // pipeline, and it must NEVER auto-run on import, confirmed directly
+    // by the investigator (2026-11): a real case can hold hundreds of
+    // thousands of images, and OCR now costs a real per-call fee.
+    // Deterministic extraction (docx/xlsx/pptx/PDF text layer) is
+    // unaffected and still runs automatically.
     await runExtraction(db, { datasetIds: [inserted.datasetId], includeImages: false });
+    // No original attachment bytes are ever kept past this point, for any
+    // format -- confirmed directly by the investigator (2026-11): opening
+    // a live/raw attachment outside this app (their partner's Thunderbird
+    // repeatedly flagging real malware from exactly that) is the actual
+    // risk being designed against, and even a "safe" format like docx/pdf
+    // can carry macros/embedded scripts, so there's no safe-format
+    // allowlist here -- everything loses its original once extraction has
+    // had its one chance to read it. See purge-attachment-originals.js.
+    // This also means an image attachment's bytes are gone before anyone
+    // could ever manually trigger OCR on it -- an accepted tradeoff, not
+    // an oversight; the source archive is the fallback if the original is
+    // ever needed again.
+    await purgeAttachmentOriginals(db, [inserted.datasetId]);
     runScan(db, { datasetIds: [inserted.datasetId] });
     // Whole-DB rebuild (not scoped to this dataset) -- threading can link
     // messages across datasets, see persistThreads()'s own comment.
@@ -291,8 +306,12 @@ function registerIpcHandlers() {
     });
 
     // See the import-archive handler above for why includeImages: false
-    // is mandatory here too, not optional.
+    // and the originals purge right after it are mandatory here too, not
+    // optional. (This case's attachments already have no savedPath at
+    // all -- Autopsy never gave this project retrievable bytes to begin
+    // with -- so the purge is a no-op here, kept only for consistency.)
     await runExtraction(db, { datasetIds: [inserted.datasetId], includeImages: false });
+    await purgeAttachmentOriginals(db, [inserted.datasetId]);
     runScan(db, { datasetIds: [inserted.datasetId] });
     persistThreads(db);
 
@@ -304,14 +323,14 @@ function registerIpcHandlers() {
     };
   });
 
-  ipcMain.handle('get-available-langs', () => ({ available: AVAILABLE_LANGS, defaultLangs: DEFAULT_LANGS }));
-
-  // options: { datasetIds?, force?, langs? } -- langs lets the
-  // investigator pick which Tesseract languages to OCR this run against
-  // (see ocr.js's AVAILABLE_LANGS) instead of always using the eng+fas
-  // default, e.g. re-running a dataset once it's clear its images are in
-  // Arabic rather than Farsi.
-  ipcMain.handle('run-extraction', (_event, options) => runExtraction(db, options ?? {}));
+  // Image to Text: one attachment at a time, investigator-triggered from
+  // the actual file in ReadingPane -- NOT the old dataset-wide "Re-run
+  // OCR" bulk button (removed, see src/extract/attachment-image-to-
+  // text.js's own comment for why). runExtraction() itself stays
+  // imported above for its one remaining caller, the import-time
+  // deterministic (non-AI) extraction pass below -- it is deliberately
+  // no longer reachable from the renderer at all.
+  ipcMain.handle('image-to-text', (_event, attachmentId) => imageToText(db, attachmentId));
 
   ipcMain.handle('get-available-translate-langs', () => ({ available: AVAILABLE_TRANSLATE_LANGS }));
 
@@ -326,6 +345,35 @@ function registerIpcHandlers() {
   ipcMain.handle('translate-attachment', (_event, { attachmentId, sourceLang }) =>
     translateAttachment(db, attachmentId, sourceLang)
   );
+
+  // Focus Set batch processing: hand-select communications, see an exact
+  // pending/already-done count before committing (preview-focus-selection,
+  // no AI call), then run only what's actually pending
+  // (translate-focus-selection) -- re-running the same or an overlapping
+  // selection later never re-translates anything, so there's no double
+  // paying for the same item. See src/translate/translate-batch.js.
+  ipcMain.handle('preview-focus-selection', (_event, communicationIds) => previewFocusSelection(db, communicationIds));
+  ipcMain.handle('translate-focus-selection', (_event, { communicationIds, sourceLang }) =>
+    translateFocusSelection(db, communicationIds, sourceLang)
+  );
+
+  // Analyze Thread: on-demand, one thread at a time, same "no preview
+  // needed" reasoning as translate-communication above -- it's a single
+  // explicit click, not a bulk action. communicationIds comes from the
+  // renderer's already-assembled thread.members (see App.jsx), since
+  // there's no persisted "threads" table to look membership up against
+  // server-side from threadId alone.
+  ipcMain.handle('analyze-thread', (_event, { threadId, communicationIds }) =>
+    analyzeThread(db, threadId, communicationIds)
+  );
+  ipcMain.handle('get-thread-summary', (_event, threadId) => getThreadSummary(db, threadId));
+
+  // AI Settings UI: a form-based alternative to hand-editing ai-config.json.
+  // get-ai-config-status never returns the key itself, encrypted or not --
+  // see src/ai-assist/config.js's getAiConfigStatus() for why that's safe
+  // to do unconditionally rather than relying only on contextIsolation.
+  ipcMain.handle('get-ai-config-status', () => getAiConfigStatus());
+  ipcMain.handle('save-ai-config', (_event, config) => saveAiConfig(config));
 
   ipcMain.handle('run-scan', (_event, datasetIds) => runScan(db, { datasetIds }));
 

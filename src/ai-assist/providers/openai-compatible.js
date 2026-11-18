@@ -66,3 +66,21 @@ export async function translateChunk(config, text, langName) {
   ]);
   return translated.trim();
 }
+
+/**
+ * Summarizes an already-assembled thread transcript (see
+ * src/threading/summarize-thread.js for how `text` is built) into plain
+ * prose -- who's involved, what they're discussing, key dates/events.
+ * This is a triage aid, not an evidentiary finding (see this project's
+ * "POC, not evidence" rule): the investigator still reads the actual
+ * messages, this just orients them faster across a long thread.
+ */
+export async function summarizeThread(config, text) {
+  const summary = await chatCompletion(config, [
+    {
+      role: 'user',
+      content: `The following is a transcript of one email/message thread, each entry preceded by its date, sender, and recipient. Write a plain-language summary covering: who is involved, what they are discussing, and the key events/dates in chronological order. Output only the summary, with no commentary or preamble:\n\n${text}`,
+    },
+  ]);
+  return summary.trim();
+}

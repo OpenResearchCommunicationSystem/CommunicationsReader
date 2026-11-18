@@ -26,12 +26,21 @@ import { indexAttachmentText } from '../search/token-index.js';
  * extractAttachmentText() call itself is shared, mirroring insert.js's
  * "never silently drop a row" dedup policy.
  *
- * options: { datasetIds?: number[], force?: boolean, langs?: string[],
+ * options: { datasetIds?: number[], force?: boolean,
  * includeImages?: boolean } -- force re-runs extraction even for
- * attachments already attempted (e.g. after a library upgrade). langs
- * selects which language hint OCR runs with for this call (see ocr.js's
- * AVAILABLE_LANGS); defaults to ocr.js's own DEFAULT_LANGS when omitted.
- * Non-image extractors ignore it.
+ * attachments already attempted (e.g. after a library upgrade).
+ *
+ * This is the dataset-wide BATCH path -- confirmed directly (2026-11)
+ * that it must never be reachable from the UI with force: true, since
+ * that re-runs EVERY attachment in a dataset (not just images) with no
+ * preview/confirmation step, which is exactly the uncontrolled-bulk-AI-
+ * action problem this project's house rule exists to prevent elsewhere
+ * (see translate-batch.js's preview-before-commit convention). The only
+ * UI-reachable per-attachment AI action is now src/extract/attachment-
+ * image-to-text.js's imageToText(), one image at a time, investigator-
+ * triggered. This function itself stays for its one legitimate caller:
+ * electron/main.js's import-time deterministic (non-AI) extraction pass
+ * (includeImages: false).
  *
  * includeImages (default true) gates the ONLY AI-backed extractor in this
  * pipeline (see ocr.js -- images now go through a paid AI endpoint, not
@@ -51,7 +60,7 @@ import { indexAttachmentText } from '../search/token-index.js';
  * Returns { attempted, succeeded, failed, deduped }.
  */
 export async function runExtraction(db, options = {}) {
-  const { datasetIds, force = false, langs, includeImages = true } = options;
+  const { datasetIds, force = false, includeImages = true } = options;
 
   let sql = `
     SELECT a.id, a.communicationId, a.filename, a.mimeType, a.savedPath, a.contentHash
@@ -104,7 +113,7 @@ export async function runExtraction(db, options = {}) {
       const [representative] = group;
       let result;
       try {
-        result = await extractAttachmentText(representative, { langs });
+        result = await extractAttachmentText(representative);
       } catch (err) {
         // extractAttachmentText contracts to never throw, but guard the
         // batch loop anyway (belt-and-suspenders, same as insert.js).

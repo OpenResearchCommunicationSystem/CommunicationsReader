@@ -3,7 +3,7 @@
 //
 //   term    := QUOTED_STRING | WORD | /regex/flags
 //   near    := term "NEAR/" NUMBER term   (word-distance, order-independent)
-//   field   := FIELD ":" term             (FIELD in subject|body|from|to|attachment)
+//   field   := FIELD ":" term             (FIELD in subject|body|from|to|attachment|filename|translation)
 //   primary := field | near | term | "(" expr ")"
 //   unary   := "NOT" primary | primary
 //   and_e   := unary ("AND" unary | unary)*   (bare whitespace also means AND)
@@ -22,7 +22,7 @@ export class SearchSyntaxError extends Error {
   }
 }
 
-const FIELD_NAMES = new Set(['subject', 'body', 'from', 'to', 'attachment']);
+const FIELD_NAMES = new Set(['subject', 'body', 'from', 'to', 'attachment', 'filename', 'translation']);
 
 function isBoundaryChar(ch) {
   return ch === undefined || /\s/.test(ch) || ch === '(' || ch === ')' || ch === '"' || ch === '/';

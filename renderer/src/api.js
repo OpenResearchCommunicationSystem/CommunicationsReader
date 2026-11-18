@@ -58,28 +58,9 @@ export async function importAutopsyCase() {
   throw new Error('importAutopsyCase is only available inside the Electron app');
 }
 
-export async function runExtraction(options) {
-  if (hasRealApi) return window.api.runExtraction(options);
-  throw new Error('runExtraction is only available inside the Electron app');
-}
-
-// Mirrors src/extract/ocr.js's AVAILABLE_LANGS/DEFAULT_LANGS for preview
-// mode, where the renderer runs standalone in a browser with no Electron
-// main process (and therefore no access to that Node module) to ask.
-const MOCK_AVAILABLE_LANGS = {
-  eng: 'English',
-  fas: 'Farsi',
-  ara: 'Arabic',
-  chi_sim: 'Chinese (Simplified)',
-  rus: 'Russian',
-  spa: 'Spanish',
-  tur: 'Turkish',
-  ell: 'Greek',
-};
-
-export async function getAvailableLangs() {
-  if (hasRealApi) return window.api.getAvailableLangs();
-  return { available: MOCK_AVAILABLE_LANGS, defaultLangs: ['eng', 'fas'] };
+export async function imageToText(attachmentId) {
+  if (hasRealApi) return window.api.imageToText(attachmentId);
+  throw new Error('imageToText is only available inside the Electron app');
 }
 
 // Mirrors src/translate/translate.js's AVAILABLE_LANGS for preview mode.
@@ -106,6 +87,36 @@ export async function translateCommunication(communicationId, sourceLang) {
 export async function translateAttachment(attachmentId, sourceLang) {
   if (hasRealApi) return window.api.translateAttachment(attachmentId, sourceLang);
   throw new Error('translateAttachment is only available inside the Electron app');
+}
+
+export async function getAiConfigStatus() {
+  if (hasRealApi) return window.api.getAiConfigStatus();
+  return { configured: false, provider: '', baseUrl: '', model: '', orgId: '' };
+}
+
+export async function saveAiConfig(config) {
+  if (hasRealApi) return window.api.saveAiConfig(config);
+  throw new Error('saveAiConfig is only available inside the Electron app');
+}
+
+export async function previewFocusSelection(communicationIds) {
+  if (hasRealApi) return window.api.previewFocusSelection(communicationIds);
+  throw new Error('previewFocusSelection is only available inside the Electron app');
+}
+
+export async function translateFocusSelection(communicationIds, sourceLang) {
+  if (hasRealApi) return window.api.translateFocusSelection(communicationIds, sourceLang);
+  throw new Error('translateFocusSelection is only available inside the Electron app');
+}
+
+export async function analyzeThread(threadId, communicationIds) {
+  if (hasRealApi) return window.api.analyzeThread(threadId, communicationIds);
+  throw new Error('analyzeThread is only available inside the Electron app');
+}
+
+export async function getThreadSummary(threadId) {
+  if (hasRealApi) return window.api.getThreadSummary(threadId);
+  return null;
 }
 
 export async function runScan(datasetIds) {

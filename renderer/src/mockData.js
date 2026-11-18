@@ -15,7 +15,7 @@ const shippingMembers = [
   { communicationId: 2, datasetId: 1, timestamp: new Date('2021-03-15T02:00:00Z').getTime(), subject: 'Re: اجاره کشتی MV Golestan — محموله نفت خام فجیره' },
   { communicationId: 3, datasetId: 1, timestamp: new Date('2021-03-16T06:50:00Z').getTime(), subject: 'Re: اجاره کشتی MV Golestan — محموله نفت خام فجیره' },
   { communicationId: 6, datasetId: 1, timestamp: new Date('2021-03-18T03:15:00Z').getTime(), subject: 'Re: اجاره کشتی MV Golestan — محموله نفت خام فجیره' },
-  { communicationId: 7, datasetId: 1, timestamp: new Date('2021-03-20T00:45:00Z').getTime(), subject: 'Re: اجاره کشتی MV Golestan — محموله نفت خام فجیره' },
+  { communicationId: 7, datasetId: 1, timestamp: new Date('2021-03-20T00:45:00Z').getTime(), subject: 'Re: اجاره کشتی MV Golestan — محموله نفت خام فجیره', attachments: { count: 3, kinds: ['image', 'xlsx', 'unsupported'] } },
   { communicationId: 8, datasetId: 1, timestamp: new Date('2021-03-22T08:30:00Z').getTime(), subject: 'Re: اجاره کشتی MV Golestan — محموله نفت خام فجیره' },
 ];
 
@@ -33,6 +33,7 @@ export const mockThreads = [
     participants: ['reza.hosseini@sepehrnaft.ir', 'davoud.bahrami@kavehmaritime.ir', 'saeed.jafari@kavehmaritime.ir', 'fatemeh.karimi@sepehrnaft.ir', 'hassan.golshani@aryanexchange.ir'],
     dateRange: { start: shippingMembers[0].timestamp, end: shippingMembers[shippingMembers.length - 1].timestamp },
     messageCount: shippingMembers.length,
+    attachmentCount: shippingMembers.reduce((sum, m) => sum + (m.attachments?.count ?? 0), 0),
     members: shippingMembers,
   },
   {
@@ -109,6 +110,15 @@ const mockCommunications = {
         extractionStatus: 'attempted_succeeded',
         extractedText:
           'Sheet: Charter Summary\nVessel | MV Golestan\nDWT | 74,200\nLaycan | 2021-03-22 / 2021-03-25\nFreight Rate | USD 2.85/bbl\nDemurrage | USD 18,000/day',
+      },
+      {
+        id: 4,
+        filename: 'scan.pdf',
+        mimeType: 'application/pdf',
+        size: 5887,
+        extractionStatus: 'not_attempted',
+        quarantineStatus: 'rejected',
+        quarantineReason: 'claimed kind "pdf" does not match verified content (looks like "xlsx")',
       },
     ],
   },

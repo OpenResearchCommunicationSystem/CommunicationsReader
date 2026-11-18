@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { openDatabase } from '../src/db/schema.js';
 import { insertDataset } from '../src/db/insert.js';
 import { runSearch } from '../src/search/run-search.js';
-import { indexCommunicationText, indexAttachmentText } from '../src/search/token-index.js';
+import { indexCommunicationText, indexAttachmentText, indexAttachmentFilename, indexCommunicationTranslation } from '../src/search/token-index.js';
 
 // Indexes alongside the raw insert, same as src/db/insert.js does for a
 // real import -- runSearch's candidate-narrowing only sees a row at all
@@ -29,6 +29,17 @@ function insertExtractedAttachment(db, communicationId, extractedText) {
     )
     .run(communicationId, extractedText, Date.now());
   indexAttachmentText(db, communicationId, Number(res.lastInsertRowid), extractedText);
+}
+
+// Mirrors an image or legacy .doc/.xls attachment -- no extracted text at
+// all (not_attempted), same as src/db/insert.js's real insertAttachments()
+// for one of those. Filename indexing must not depend on extraction ever
+// running, let alone succeeding.
+function insertAttachmentWithNoExtractedText(db, communicationId, filename) {
+  const res = db
+    .prepare(`INSERT INTO attachments (communicationId, filename, extractionStatus) VALUES (?, ?, 'not_attempted')`)
+    .run(communicationId, filename);
+  indexAttachmentFilename(db, communicationId, Number(res.lastInsertRowid), filename);
 }
 
 test('runSearch finds a matching communication within a dataset', () => {
@@ -89,6 +100,50 @@ test('runSearch on a malformed query returns an error instead of throwing', () =
   const result = runSearch(db, { datasetIds: [datasetId], query: '/unterminated' });
   assert.equal(result.resultCount, 0);
   assert.ok(result.error);
+
+  db.close();
+});
+
+test('runSearch finds a message by attachment filename, even with no extracted text at all', () => {
+  const db = openDatabase(':memory:');
+  const datasetId = insertDataset(db, { sourceType: 'email-eml', originalPath: 'x.zip' });
+  const commId = insertCommunication(db, datasetId, { subject: 'see attached', bodyText: 'nothing relevant in the body' });
+  insertAttachmentWithNoExtractedText(db, commId, 'Q4-invoice-final.pdf');
+
+  const unscoped = runSearch(db, { datasetIds: [datasetId], query: 'invoice' });
+  assert.equal(unscoped.resultCount, 1, 'default unscoped search must cover filenames too');
+  assert.equal(unscoped.results[0].hits[0].field, 'filename');
+
+  const scoped = runSearch(db, { datasetIds: [datasetId], query: 'filename:invoice' });
+  assert.equal(scoped.resultCount, 1);
+
+  const wrongField = runSearch(db, { datasetIds: [datasetId], query: 'body:invoice' });
+  assert.equal(wrongField.resultCount, 0, 'the filename-only hit must not leak into an unrelated field scope');
+
+  db.close();
+});
+
+test('runSearch finds a message by its body translation, not just the untranslated original', () => {
+  const db = openDatabase(':memory:');
+  const datasetId = insertDataset(db, { sourceType: 'email-eml', originalPath: 'x.zip' });
+  const commId = insertCommunication(db, datasetId, { subject: 'x', bodyText: 'original-language placeholder text' });
+
+  // Simulates what src/translate/translate-record.js's translateCommunication()
+  // does after a real AI call: write translatedText, then index it.
+  db.prepare('UPDATE communications SET translatedText = ? WHERE id = ?').run('hello world, please see the wallet transfer', commId);
+  indexCommunicationTranslation(db, commId, 'hello world, please see the wallet transfer');
+
+  const unscoped = runSearch(db, { datasetIds: [datasetId], query: 'wallet' });
+  assert.equal(unscoped.resultCount, 1, 'default unscoped search must cover the translation too');
+  assert.equal(unscoped.results[0].hits[0].field, 'translation');
+
+  const scoped = runSearch(db, { datasetIds: [datasetId], query: 'translation:wallet' });
+  assert.equal(scoped.resultCount, 1);
+
+  // The original-language body must still be searchable on its own terms
+  // -- adding translation search must not replace or shadow it.
+  const originalStillWorks = runSearch(db, { datasetIds: [datasetId], query: 'placeholder' });
+  assert.equal(originalStillWorks.resultCount, 1);
 
   db.close();
 });

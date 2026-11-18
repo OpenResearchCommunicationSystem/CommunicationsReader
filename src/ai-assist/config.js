@@ -115,3 +115,77 @@ export function loadAiConfig() {
   if (!apiKey || !parsed.baseUrl) return null;
   return { ...parsed, apiKey };
 }
+
+/**
+ * Writes a new AI config from the renderer's AI Settings form (see
+ * electron/main.js's 'save-ai-config' handler) -- the UI counterpart to
+ * hand-editing the JSON file, for the investigator who'd rather use a
+ * dropdown + fields than find and edit a file under AppData. Encrypts
+ * the key immediately, same guarantee as loadAiConfig()'s transparent
+ * upgrade: it is never written to disk in plaintext past this one call.
+ *
+ * apiKey is left blank ('') to mean "no change" -- e.g. switching the
+ * model name shouldn't silently wipe an already-working key just
+ * because the password-style field was (correctly) never pre-filled
+ * with it. Pass clearKey: true to actually remove a saved key; that's
+ * the only way to clear one via this function.
+ */
+export function saveAiConfig({ provider, baseUrl, apiKey, model, orgId, clearKey = false }) {
+  const p = configPath();
+  if (!p) throw new Error('saveAiConfig: AI_CONFIG_PATH is not set');
+
+  const canEncrypt = encryptionAvailable();
+  const existing = fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : {};
+  const config = {
+    provider: provider || 'openai-compatible',
+    baseUrl: baseUrl || '',
+    apiKey: '',
+    model: model || '',
+    orgId: orgId || '',
+  };
+
+  if (apiKey) {
+    if (canEncrypt) config.apiKeyEncrypted = encryptKey(apiKey);
+    else config.apiKey = apiKey; // best-effort fallback where OS-level encryption genuinely isn't available
+  } else if (!clearKey) {
+    // Carry the existing credential forward untouched -- never
+    // re-encrypt/re-derive it, just keep whatever bytes were already
+    // on disk (works whether that was apiKeyEncrypted or, on a system
+    // with no OS-level encryption available, a plaintext apiKey).
+    if (existing.apiKeyEncrypted) config.apiKeyEncrypted = existing.apiKeyEncrypted;
+    else if (existing.apiKey) config.apiKey = existing.apiKey;
+  }
+
+  fs.writeFileSync(p, JSON.stringify(config, null, 2), 'utf8');
+}
+
+/**
+ * A safe-to-send-to-the-renderer summary of the current config --
+ * provider/baseUrl/model/orgId and whether a key is actually present,
+ * but never the key itself (decrypted or not). The AI Settings UI uses
+ * this to show "currently configured: X" without the main process ever
+ * handing a credential back across the IPC boundary once it's been
+ * saved -- contextIsolation keeps the renderer off of Node/the
+ * filesystem entirely, but there's no reason to rely on that alone when
+ * "just don't send it" is simpler and just as effective.
+ */
+export function getAiConfigStatus() {
+  const p = configPath();
+  if (!p || !fs.existsSync(p)) return { configured: false, provider: '', baseUrl: '', model: '', orgId: '' };
+
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch {
+    return { configured: false, provider: '', baseUrl: '', model: '', orgId: '' };
+  }
+
+  const hasKey = Boolean(parsed.apiKey || parsed.apiKeyEncrypted);
+  return {
+    configured: hasKey && Boolean(parsed.baseUrl),
+    provider: parsed.provider || '',
+    baseUrl: parsed.baseUrl || '',
+    model: parsed.model || '',
+    orgId: parsed.orgId || '',
+  };
+}

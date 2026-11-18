@@ -1,7 +1,7 @@
 {
   "name": "communications-reader",
   "version": "1.0.0",
-  "buildNumber": 17,
+  "buildNumber": 21,
   "description": "Air-gapped-first communications analysis tool for e-discovery and investigative research: import, search, thread, translate/OCR via an optional AI endpoint, and export a curated focus set.",
   "type": "module",
   "main": "electron/main.js",
@@ -23,13 +23,16 @@
     "chardet": "^2.2.0",
     "exceljs": "^4.4.0",
     "iconv-lite": "^0.7.3",
+    "jpeg-js": "^0.4.4",
     "mailparser": "^3.9.14",
     "mammoth": "^1.12.0",
     "path2d": "^0.3.3",
     "pdfjs-dist": "^6.1.200",
+    "pngjs": "^7.0.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "unzipper": "^0.12.5"
+    "unzipper": "^0.12.5",
+    "utif2": "^4.1.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.0.3",
@@ -43,7 +46,7 @@
   "build": {
     "appId": "com.communicationsreader.app",
     "productName": "Communications Reader",
-    "buildVersion": "1.0.0.17",
+    "buildVersion": "1.0.0.21",
     "directories": {
       "output": "release"
     },

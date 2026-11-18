@@ -1,14 +1,16 @@
 import { loadAiConfig } from './config.js';
 import * as openaiCompatible from './providers/openai-compatible.js';
+import * as anthropic from './providers/anthropic.js';
 
-// Only one provider wire-format is implemented so far (see providers/
-// openai-compatible.js's own header for which real services that
-// covers). Anthropic's Messages API and Gemini's generateContent use
-// different request/response shapes -- adding either is a new file
-// under providers/ exposing the same { ocrImage, translateChunk } pair,
-// registered here. Nothing outside this directory needs to change.
+// Two provider wire-formats implemented so far (see each provider
+// file's own header for exactly what it covers and why it's separate).
+// Gemini's generateContent is a third, different shape -- adding it is
+// a new file under providers/ exposing the same { ocrImage,
+// translateChunk } pair, registered here. Nothing outside this
+// directory needs to change.
 const PROVIDERS = {
   'openai-compatible': openaiCompatible,
+  anthropic,
 };
 
 export function isAiConfigured() {
@@ -47,4 +49,18 @@ export async function translateChunkViaAi(text, langName) {
   if (!provider) return null;
   const translated = await provider.impl.translateChunk(provider.config, text, langName);
   return { text: translated, meta: { translationEngine: `ai:${provider.config.provider}:${provider.config.model}` } };
+}
+
+/**
+ * Returns { text, meta } (text is the plain-language summary), or null
+ * when unconfigured -- same "null means unavailable, not an error"
+ * contract as the two functions above. meta.summaryEngine records which
+ * provider/model actually produced it, same reasoning as
+ * meta.translationEngine.
+ */
+export async function summarizeThreadViaAi(text) {
+  const provider = getProvider();
+  if (!provider) return null;
+  const summary = await provider.impl.summarizeThread(provider.config, text);
+  return { text: summary, meta: { summaryEngine: `ai:${provider.config.provider}:${provider.config.model}` } };
 }

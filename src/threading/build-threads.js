@@ -1,5 +1,16 @@
 import { createHash } from 'node:crypto';
 import { normalizeSubject } from './normalize-subject.js';
+import { classifyAttachment } from '../extract/index.js';
+
+// A lightweight {count, kinds} summary, not the full attachment rows --
+// the thread/message list views only ever need to show "this one has 2
+// attachments (pdf, image)", not extracted text/translation/hash detail,
+// which stays in ReadingPane's own per-communication fetch.
+function attachmentSummary(communication) {
+  const attachments = communication.attachments || [];
+  const kinds = [...new Set(attachments.map((a) => classifyAttachment(a)))];
+  return { count: attachments.length, kinds };
+}
 
 class UnionFind {
   constructor(n) {
@@ -82,11 +93,16 @@ export function assembleThread(members, method) {
     participants: [...participantSet],
     dateRange,
     messageCount: sorted.length,
+    // Rollup across every member -- lets the thread list show "this
+    // thread has attachments" without the list consumer summing
+    // member.attachments.count itself.
+    attachmentCount: sorted.reduce((sum, m) => sum + (m.attachments || []).length, 0),
     members: sorted.map((m) => ({
       communicationId: m.id,
       datasetId: m.datasetId,
       timestamp: m.timestamp,
       subject: m.subject,
+      attachments: attachmentSummary(m),
     })),
   };
 }

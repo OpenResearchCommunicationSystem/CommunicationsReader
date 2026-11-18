@@ -1,25 +1,6 @@
 import fs from 'node:fs';
 import { ocrImageViaAi } from '../ai-assist/index.js';
 
-// Curated, not exhaustive -- kept only as the UI's per-run language
-// picker list; the AI vision model handles multilingual text natively
-// and langs is no longer required to select a worker/model the way
-// Tesseract needed it. Kept as a hint only: a chosen language isn't
-// enforced, since the API doesn't need one, but the picker stays so an
-// investigator can still note what they expect to see.
-export const AVAILABLE_LANGS = {
-  eng: 'English',
-  fas: 'Farsi',
-  ara: 'Arabic',
-  chi_sim: 'Chinese (Simplified)',
-  rus: 'Russian',
-  spa: 'Spanish',
-  tur: 'Turkish',
-  ell: 'Greek',
-};
-
-export const DEFAULT_LANGS = ['eng', 'fas'];
-
 // Same sniff-before-trusting-the-claimed-type guard as before Tesseract
 // was removed -- still worth doing even though an API call (not a local
 // WASM worker) now does the reading: it's a cheap, free way to reject a

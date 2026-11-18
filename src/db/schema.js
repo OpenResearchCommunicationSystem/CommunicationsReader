@@ -246,6 +246,27 @@ CREATE TABLE IF NOT EXISTS import_progress (
   status              TEXT NOT NULL DEFAULT 'in_progress',
   updatedAt           INTEGER NOT NULL
 );
+
+-- One row per thread ever analyzed, keyed by the same threadId string
+-- src/threading/build-threads.js's assembleThread() computes (a stable
+-- hash of the thread's sorted member communication ids -- see that
+-- file's stableThreadId()), not a foreign key, since threads aren't a
+-- persisted entity of their own. UNIQUE(threadId) means re-analyzing a
+-- thread overwrites its prior summary rather than accumulating history --
+-- this is a working aid for the investigator, not an append-only record
+-- (see audit_log for that). messageCount is the member count the summary
+-- was actually generated from, so the UI can tell a summary is stale
+-- (new messages have joined the thread since) without re-calling the AI
+-- endpoint just to check.
+CREATE TABLE IF NOT EXISTS thread_summaries (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  threadId      TEXT NOT NULL UNIQUE,
+  summary       TEXT NOT NULL,
+  messageCount  INTEGER NOT NULL,
+  provider      TEXT,
+  model         TEXT,
+  generatedAt   INTEGER NOT NULL
+);
 `;
 
 // Indexes are deliberately kept OUT of TABLES_SQL and run only after

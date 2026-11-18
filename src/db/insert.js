@@ -1,5 +1,5 @@
 import { mapEmailMessageToCommunication } from './map-email.js';
-import { indexCommunicationText } from '../search/token-index.js';
+import { indexCommunicationText, indexAttachmentFilename } from '../search/token-index.js';
 
 // Messages are committed in batches rather than one all-or-nothing
 // transaction, so an interruption (the laptop losing power or being
@@ -135,7 +135,7 @@ function insertParticipants(db, communicationId, participants) {
 function insertAttachments(db, communicationId, attachments) {
   const stmts = getStatements(db);
   for (const a of attachments) {
-    stmts.insertAttachment.run({
+    const res = stmts.insertAttachment.run({
       communicationId,
       filename: a.filename ?? null,
       size: a.size ?? null,
@@ -143,6 +143,13 @@ function insertAttachments(db, communicationId, attachments) {
       savedPath: a.savedPath ?? null,
       contentHash: a.contentHash ?? null,
     });
+    // Filename is known immediately, regardless of whether extraction
+    // ever runs or succeeds (an image, a legacy .doc this app never
+    // attempts, a rejected/quarantined file) -- indexed right here, not
+    // left to piggyback on extraction succeeding.
+    if (a.filename) {
+      indexAttachmentFilename(db, communicationId, Number(res.lastInsertRowid), a.filename);
+    }
   }
 }
 
