@@ -7,14 +7,20 @@ name: Release
 # forbids, since it wires up autoUpdater): this just uploads the file
 # GitHub Actions already builds in ci.yml.
 #
-# To cut a release: tag master with a version (e.g. `git tag v1.0.0 &&
-# git push origin v1.0.0`) or run this workflow manually from the
-# Actions tab.
+# To cut a release: on GitHub, go to Releases -> "Draft a new release",
+# pick or create any tag, and click "Publish release" -- that alone
+# triggers this workflow, whatever the tag is named. (Editing an
+# existing release doesn't re-fire "published"; delete and re-publish
+# it instead if you need to re-run this.) From the command line, use
+# `gh release create vX.Y.Z` rather than a bare `git tag`/`git push`,
+# since a tag push with no release object has nothing for this
+# workflow to attach the exe to. It can also be run manually from the
+# Actions tab, against a chosen tag ref, to re-attach the exe to a
+# release that already exists.
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
   workflow_dispatch: {}
 
 permissions:
