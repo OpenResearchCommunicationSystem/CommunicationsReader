@@ -27,6 +27,7 @@ export default function AiSettingsPanel({ onClose }) {
   const [provider, setProvider] = useState(PROVIDER_PRESETS[0].provider);
   const [baseUrl, setBaseUrl] = useState(PROVIDER_PRESETS[0].baseUrl);
   const [model, setModel] = useState(PROVIDER_PRESETS[0].model);
+  const [analysisModel, setAnalysisModel] = useState('');
   const [orgId, setOrgId] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [saving, setSaving] = useState(false);
@@ -40,6 +41,7 @@ export default function AiSettingsPanel({ onClose }) {
         setProvider(s.provider);
         setBaseUrl(s.baseUrl);
         setModel(s.model);
+        setAnalysisModel(s.analysisModel);
         setOrgId(s.orgId);
       }
     });
@@ -57,7 +59,7 @@ export default function AiSettingsPanel({ onClose }) {
     setSaving(true);
     setResult(null);
     try {
-      await api.saveAiConfig({ provider, baseUrl, apiKey, model, orgId });
+      await api.saveAiConfig({ provider, baseUrl, apiKey, model, analysisModel, orgId });
       const refreshed = await api.getAiConfigStatus();
       setStatus(refreshed);
       setApiKey('');
@@ -73,7 +75,7 @@ export default function AiSettingsPanel({ onClose }) {
     setSaving(true);
     setResult(null);
     try {
-      await api.saveAiConfig({ provider, baseUrl, apiKey: '', model, orgId, clearKey: true });
+      await api.saveAiConfig({ provider, baseUrl, apiKey: '', model, analysisModel, orgId, clearKey: true });
       const refreshed = await api.getAiConfigStatus();
       setStatus(refreshed);
       setApiKey('');
@@ -102,7 +104,7 @@ export default function AiSettingsPanel({ onClose }) {
         {status && (
           <div className={`ai-settings-status ${status.configured ? 'configured' : 'unconfigured'}`}>
             {status.configured
-              ? `Currently configured: ${status.provider} -- ${status.model || '(no model set)'}`
+              ? `Currently configured: ${status.provider} -- ${status.model || '(no model set)'}${status.analysisModel ? ` (analysis: ${status.analysisModel})` : ''}`
               : 'Not configured -- OCR and translation will report unavailable.'}
           </div>
         )}
@@ -130,6 +132,21 @@ export default function AiSettingsPanel({ onClose }) {
         <label className="ai-settings-field">
           Model
           <input type="text" value={model} onChange={(e) => setModel(e.target.value)} disabled={saving} />
+        </label>
+
+        <label className="ai-settings-field">
+          Analysis model (optional)
+          <input
+            type="text"
+            value={analysisModel}
+            onChange={(e) => setAnalysisModel(e.target.value)}
+            placeholder={`leave blank to use ${model || 'the model above'}`}
+            disabled={saving}
+          />
+          <span className="ai-settings-field-hint">
+            A stronger/more expensive model to use for entity extraction and follow-up Q&amp;A specifically, on this
+            same endpoint and key. OCR and translation always use the model above.
+          </span>
         </label>
 
         {presetKey === 'openai' && (

@@ -21,9 +21,13 @@ evidentiary handling.
 - **Thread** related messages together across datasets.
 - **Extract text** from `.docx`/`.xlsx`/`.pptx`/PDF attachments
   deterministically (no AI involved).
-- **OCR and translate**, on request only, via an AI API endpoint you
-  configure — OpenAI, Grok, a local/self-hosted OpenAI-compatible
-  server, or an organization's own AI gateway. Never runs
+- **OCR, translate (source language auto-detected), summarize a thread
+  or the whole Focus Set, extract named entities, and ask follow-up
+  questions about the Focus Set** — all on request only, via an AI API
+  endpoint you configure — OpenAI, Grok, Anthropic, a local/self-hosted
+  OpenAI-compatible server, or an organization's own AI gateway. A
+  second, optional "analysis model" lets entity extraction/Q&A use a
+  stronger model than OCR/translation, on the same endpoint. Never runs
   automatically on import; see [SECURITY.md](SECURITY.md) for why.
 - **Flag crypto-related indicators** in message/attachment text.
 - **Curate a Focus Set** of messages and export it as a portable text
@@ -62,10 +66,9 @@ npm run package       # build the portable Windows exe (release/)
 npm test              # run the test suite
 ```
 
-A maintainer cuts a new release by pushing a version tag (e.g.
-`git tag v1.0.0 && git push origin v1.0.0`); `.github/workflows/release.yml`
-then builds the exe and attaches it to a new GitHub Release
-automatically.
+A maintainer cuts a new release on GitHub (Releases -> "Draft a new
+release" -> publish, any tag name); `.github/workflows/release.yml`
+then builds the exe and attaches it to that release automatically.
 
 ## Architecture notes
 

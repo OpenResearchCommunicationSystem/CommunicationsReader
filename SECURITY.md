@@ -22,19 +22,27 @@ found outside one explicit, scoped exception: `src/ai-assist/`.
 ## AI integration (the one network-capable module)
 
 As of build 1.0.0.14, OCR and translation call out to an AI API
-(OpenAI-compatible chat-completions wire format -- works with OpenAI,
-Grok, a local/self-hosted server, or an organization's own AI gateway)
-instead of bundling Tesseract and local ONNX translation models. This
-was a deliberate, requested trade: it removed ~900MB of bundled model
-weights (the portable exe dropped from ~1.0GB to ~118MB) in exchange for
-one scoped, optional network dependency.
+(OpenAI-compatible chat-completions wire format, or Anthropic's native
+Messages API -- works with OpenAI, Grok, Anthropic, a local/self-hosted
+server, or an organization's own AI gateway) instead of bundling
+Tesseract and local ONNX translation models. This was a deliberate,
+requested trade: it removed ~900MB of bundled model weights (the
+portable exe dropped from ~1.0GB to ~118MB) in exchange for one scoped,
+optional network dependency. The same AI integration also powers
+Analyze Thread/Analyze Collection (plain-language summaries), entity
+extraction, and follow-up Q&A over the Focus Set -- all routed through
+the same `src/ai-assist/` module and subject to the same rules below.
+Entity extraction and Q&A can optionally use a second, stronger
+"analysis model" on the same endpoint/key, configured alongside the
+main model.
 
 Everything about this integration is designed to be refused safely:
-- **Never automatic.** OCR and translation never run on import --
-  confirmed as an absolute requirement, not a preference, after a real
-  cost/control concern (a case can hold hundreds of thousands of images;
-  OCR now costs a real per-call fee). Both are only ever triggered by an
-  investigator's own explicit action, one item/dataset at a time.
+- **Never automatic.** None of this ever runs on import -- confirmed as
+  an absolute requirement, not a preference, after a real cost/control
+  concern (a case can hold hundreds of thousands of images; OCR now
+  costs a real per-call fee). Every action is only ever triggered by an
+  investigator's own explicit click, one item/thread/Focus Set at a
+  time.
 - **Dedup before anything else touches the data.** Attachment bytes are
   size-capped and content-hash-deduplicated at the moment they're first
   materialized from base64 in the parser (`src/parser/message-parse.js`),
@@ -49,6 +57,13 @@ Everything about this integration is designed to be refused safely:
   provider-agnostic module using plain `fetch`, not a vendor SDK --
   avoids pulling in a large dependency tree for something air-gapped
   deployments may not even be able to reach.
+
+Thread/collection summaries, extracted entities, and Q&A conversation
+history are case data, not credentials -- they're written to the case's
+own SQLite database (`thread_summaries`, `entity_extractions`,
+`qa_messages`), same as everything else the app derives from a case, so
+they travel with the case workspace if it's copied elsewhere. Only the
+AI API key itself is kept separate and per-machine (see below).
 
 ## Credential storage
 

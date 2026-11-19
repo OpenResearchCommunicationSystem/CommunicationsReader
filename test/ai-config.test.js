@@ -157,7 +157,7 @@ test('getAiConfigStatus reports configured state and metadata but never the key 
     async () => {
       loadAiConfig(); // triggers the transparent plaintext -> encrypted upgrade
       const status = getAiConfigStatus();
-      assert.deepEqual(status, { configured: true, provider: 'anthropic', baseUrl: 'https://api.anthropic.com/v1', model: 'claude-sonnet-5-5', orgId: '' });
+      assert.deepEqual(status, { configured: true, provider: 'anthropic', baseUrl: 'https://api.anthropic.com/v1', model: 'claude-sonnet-5-5', analysisModel: '', orgId: '' });
       assert.ok(!JSON.stringify(status).includes('sk-ant-secret-value'), 'the raw key must never appear anywhere in the status object');
     }
   );
@@ -165,6 +165,6 @@ test('getAiConfigStatus reports configured state and metadata but never the key 
 
 test('getAiConfigStatus reports unconfigured when no file exists yet', async () => {
   await withConfigFile(null, true, async () => {
-    assert.deepEqual(getAiConfigStatus(), { configured: false, provider: '', baseUrl: '', model: '', orgId: '' });
+    assert.deepEqual(getAiConfigStatus(), { configured: false, provider: '', baseUrl: '', model: '', analysisModel: '', orgId: '' });
   });
 });

@@ -10,6 +10,7 @@ import FocusPanel from './components/FocusPanel.jsx';
 import ResizeHandle from './components/ResizeHandle.jsx';
 import ActivityIndicator from './components/ActivityIndicator.jsx';
 import AiSettingsPanel from './components/AiSettingsPanel.jsx';
+import CollectionAnalysisPanel from './components/CollectionAnalysisPanel.jsx';
 import * as api from './api.js';
 
 const LAYOUT_STORAGE_KEY = 'panelLayout.v1';
@@ -68,12 +69,13 @@ export default function App() {
   const [materializeStatus, setMaterializeStatus] = useState(null);
   const [exportingText, setExportingText] = useState(false);
   const [exportTextStatus, setExportTextStatus] = useState(null);
-  const [availableTranslateLangs, setAvailableTranslateLangs] = useState(null);
+  const [aiConfigured, setAiConfigured] = useState(false);
   const [translatingCommunication, setTranslatingCommunication] = useState(false);
   const [translatingAttachmentId, setTranslatingAttachmentId] = useState(null);
   const [imageToTextAttachmentId, setImageToTextAttachmentId] = useState(null);
   const [threadSummary, setThreadSummary] = useState(null);
   const [analyzingThread, setAnalyzingThread] = useState(false);
+  const [showCollectionAnalysis, setShowCollectionAnalysis] = useState(false);
   // Focus Set batch processing ("hand-select items, see what's pending vs
   // already done, run only the pending ones"). batchSelection is a Set,
   // not an array, so toggling one item's checkbox doesn't need to scan the
@@ -82,7 +84,6 @@ export default function App() {
   // null on any selection change so a stale preview can never be confirmed
   // against a selection it no longer describes.
   const [batchSelection, setBatchSelection] = useState(() => new Set());
-  const [batchSourceLang, setBatchSourceLang] = useState('');
   const [batchPreview, setBatchPreview] = useState(null);
   const [batchProcessing, setBatchProcessing] = useState(false);
   const [batchResult, setBatchResult] = useState(null);
@@ -156,14 +157,7 @@ export default function App() {
   useEffect(() => {
     api.listDatasets().then(setDatasets).catch((err) => setError(err.message));
     api.getAppInfo().then(setAppInfo).catch(() => {});
-    api
-      .getAvailableTranslateLangs()
-      .then(({ available }) => {
-        setAvailableTranslateLangs(available);
-        const codes = Object.keys(available || {});
-        if (codes.length > 0) setBatchSourceLang(codes[0]);
-      })
-      .catch(() => {});
+    refreshAiConfigured();
     loadFocusSet();
   }, []);
 
@@ -305,10 +299,17 @@ export default function App() {
     }
   }
 
-  async function handleTranslateCommunication(communicationId, sourceLang) {
+  // Refreshed at launch and whenever AI Settings is closed, so
+  // translate/Analyze Collection controls appear immediately after
+  // saving a key without needing an app restart.
+  function refreshAiConfigured() {
+    api.getAiConfigStatus().then((s) => setAiConfigured(s.configured)).catch(() => setAiConfigured(false));
+  }
+
+  async function handleTranslateCommunication(communicationId) {
     setTranslatingCommunication(true);
     try {
-      await api.translateCommunication(communicationId, sourceLang);
+      await api.translateCommunication(communicationId);
       // Re-fetch rather than patch local state -- the same "trust the DB,
       // not an optimistic guess" approach every other mutating action here
       // already takes (see handleDeleteDataset).
@@ -321,10 +322,10 @@ export default function App() {
     }
   }
 
-  async function handleTranslateAttachment(attachmentId, sourceLang) {
+  async function handleTranslateAttachment(attachmentId) {
     setTranslatingAttachmentId(attachmentId);
     try {
-      await api.translateAttachment(attachmentId, sourceLang);
+      await api.translateAttachment(attachmentId);
       const refreshed = await api.getCommunication(selectedCommunicationId);
       setCommunication(refreshed);
     } catch (err) {
@@ -393,7 +394,7 @@ export default function App() {
   async function handleConfirmBatch() {
     setBatchProcessing(true);
     try {
-      const result = await api.translateFocusSelection([...batchSelection], batchSourceLang);
+      const result = await api.translateFocusSelection([...batchSelection]);
       setBatchResult(result);
       setBatchPreview(null);
       await loadFocusSet();
@@ -562,7 +563,20 @@ export default function App() {
           AI Settings&hellip;
         </button>
       </header>
-      {showAiSettings && <AiSettingsPanel onClose={() => setShowAiSettings(false)} />}
+      {showAiSettings && (
+        <AiSettingsPanel
+          onClose={() => {
+            setShowAiSettings(false);
+            refreshAiConfigured();
+          }}
+        />
+      )}
+      {showCollectionAnalysis && (
+        <CollectionAnalysisPanel
+          focusSetIds={focusSet.map((c) => c.id)}
+          onClose={() => setShowCollectionAnalysis(false)}
+        />
+      )}
       {error && (
         <div className="error-banner" onClick={() => setError(null)}>
           {error} <span className="dismiss">(click to dismiss)</span>
@@ -621,7 +635,7 @@ export default function App() {
           communication={communication}
           cryptoMatches={cryptoMatches}
           onExportAttachment={handleExportAttachment}
-          availableTranslateLangs={availableTranslateLangs}
+          aiAvailable={aiConfigured}
           onTranslateCommunication={handleTranslateCommunication}
           onTranslateAttachment={handleTranslateAttachment}
           translatingCommunication={translatingCommunication}
@@ -642,13 +656,12 @@ export default function App() {
           onExportText={handleExportFocusText}
           exportingText={exportingText}
           exportTextStatus={exportTextStatus}
-          availableTranslateLangs={availableTranslateLangs}
+          aiAvailable={aiConfigured}
+          onOpenCollectionAnalysis={() => setShowCollectionAnalysis(true)}
           batchSelection={batchSelection}
           onToggleBatchSelection={handleToggleBatchSelection}
           onSelectAllInFocus={handleSelectAllInFocus}
           onSelectNoneInFocus={handleSelectNoneInFocus}
-          batchSourceLang={batchSourceLang}
-          onBatchSourceLangChange={setBatchSourceLang}
           batchPreview={batchPreview}
           onPreviewBatch={handlePreviewBatch}
           onConfirmBatch={handleConfirmBatch}

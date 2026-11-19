@@ -251,13 +251,17 @@ CREATE TABLE IF NOT EXISTS import_progress (
 -- src/threading/build-threads.js's assembleThread() computes (a stable
 -- hash of the thread's sorted member communication ids -- see that
 -- file's stableThreadId()), not a foreign key, since threads aren't a
--- persisted entity of their own. UNIQUE(threadId) means re-analyzing a
--- thread overwrites its prior summary rather than accumulating history --
--- this is a working aid for the investigator, not an append-only record
--- (see audit_log for that). messageCount is the member count the summary
--- was actually generated from, so the UI can tell a summary is stale
--- (new messages have joined the thread since) without re-calling the AI
--- endpoint just to check.
+-- persisted entity of their own. Also reused as-is for the Focus Set's
+-- "Analyze Collection" action (see src/forensics/scope.js's
+-- FOCUS_SET_SCOPE), which has exactly the same shape -- an on-demand
+-- summary of an arbitrary, non-persisted set of communications -- just
+-- keyed by a fixed string instead of a real thread hash. UNIQUE(threadId)
+-- means re-analyzing a thread (or the Focus Set) overwrites its prior
+-- summary rather than accumulating history -- this is a working aid for
+-- the investigator, not an append-only record (see audit_log for that).
+-- messageCount is the member count the summary was actually generated
+-- from, so the UI can tell a summary is stale (new messages have joined
+-- since) without re-calling the AI endpoint just to check.
 CREATE TABLE IF NOT EXISTS thread_summaries (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   threadId      TEXT NOT NULL UNIQUE,
@@ -266,6 +270,41 @@ CREATE TABLE IF NOT EXISTS thread_summaries (
   provider      TEXT,
   model         TEXT,
   generatedAt   INTEGER NOT NULL
+);
+
+-- One row per scope (currently only FOCUS_SET_SCOPE) ever run through
+-- entity extraction -- same "overwrite on re-run, not append-only" shape
+-- as thread_summaries above, and for the same reason: this is a working
+-- aid for the investigator to re-run as the underlying set changes, not
+-- an evidentiary record (audit_log already captures every run as an
+-- event regardless). entitiesJson is a JSON array of
+-- {type, value, context}; parsed/validated in
+-- src/forensics/entity-extraction.js, never trusted as-is by callers.
+CREATE TABLE IF NOT EXISTS entity_extractions (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  scope         TEXT NOT NULL UNIQUE,
+  entitiesJson  TEXT NOT NULL,
+  messageCount  INTEGER NOT NULL,
+  provider      TEXT,
+  model         TEXT,
+  generatedAt   INTEGER NOT NULL
+);
+
+-- The running follow-up Q&A conversation for a scope (currently only
+-- FOCUS_SET_SCOPE) -- unlike thread_summaries/entity_extractions above,
+-- this IS append-only: each question and answer is its own row, in
+-- order, since the whole point is a multi-turn conversation the
+-- investigator can keep building on. provider/model are null on 'user'
+-- rows (nothing to record) and set on 'assistant' rows, same role they
+-- play in thread_summaries. See src/forensics/qa-chat.js.
+CREATE TABLE IF NOT EXISTS qa_messages (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  scope       TEXT NOT NULL,
+  role        TEXT NOT NULL,
+  content     TEXT NOT NULL,
+  provider    TEXT,
+  model       TEXT,
+  createdAt   INTEGER NOT NULL
 );
 `;
 
@@ -310,6 +349,8 @@ CREATE INDEX IF NOT EXISTS idx_token_index_communication  ON token_index(communi
 CREATE INDEX IF NOT EXISTS idx_token_index_attachment     ON token_index(attachmentId);
 
 CREATE INDEX IF NOT EXISTS idx_import_progress_archive ON import_progress(archiveSha256);
+
+CREATE INDEX IF NOT EXISTS idx_qa_messages_scope ON qa_messages(scope);
 `;
 
 /**

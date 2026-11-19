@@ -49,9 +49,10 @@ const TEMPLATE = {
   baseUrl: 'https://api.openai.com/v1',
   apiKey: '',
   model: 'gpt-4o-mini',
+  analysisModel: '',
   orgId: '',
   _comment:
-    "Fill in baseUrl/apiKey/model for whatever AI endpoint you've approved for this work -- OpenAI, Grok (https://api.x.ai/v1), a local/self-hosted OpenAI-compatible server (Ollama, LM Studio, vLLM), or an organization's own AI gateway, since all of those speak the same request shape. orgId is optional (OpenAI accounts in multiple orgs only). 'provider' currently only supports \"openai-compatible\"; leave apiKey empty to run fully offline -- OCR and translation will report unavailable instead of failing. Paste the real key into apiKey below and save -- the app encrypts it at rest (OS-level, via Electron safeStorage/Windows DPAPI) the next time it starts and clears this plaintext field, so it only ever sits in plaintext on disk for the one save you just did.",
+    "Fill in baseUrl/apiKey/model for whatever AI endpoint you've approved for this work -- OpenAI, Grok (https://api.x.ai/v1), a local/self-hosted OpenAI-compatible server (Ollama, LM Studio, vLLM), or an organization's own AI gateway, since all of those speak the same request shape. orgId is optional (OpenAI accounts in multiple orgs only). analysisModel is also optional -- a stronger/more expensive model to use for entity extraction and follow-up Q&A specifically, on this same endpoint/key; leave it blank to use 'model' for those too. 'provider' currently only supports \"openai-compatible\"; leave apiKey empty to run fully offline -- OCR and translation will report unavailable instead of failing. Paste the real key into apiKey below and save -- the app encrypts it at rest (OS-level, via Electron safeStorage/Windows DPAPI) the next time it starts and clears this plaintext field, so it only ever sits in plaintext on disk for the one save you just did.",
 };
 
 // An API key is a credential, not case data -- it must not sit in
@@ -130,7 +131,7 @@ export function loadAiConfig() {
  * with it. Pass clearKey: true to actually remove a saved key; that's
  * the only way to clear one via this function.
  */
-export function saveAiConfig({ provider, baseUrl, apiKey, model, orgId, clearKey = false }) {
+export function saveAiConfig({ provider, baseUrl, apiKey, model, analysisModel, orgId, clearKey = false }) {
   const p = configPath();
   if (!p) throw new Error('saveAiConfig: AI_CONFIG_PATH is not set');
 
@@ -141,6 +142,7 @@ export function saveAiConfig({ provider, baseUrl, apiKey, model, orgId, clearKey
     baseUrl: baseUrl || '',
     apiKey: '',
     model: model || '',
+    analysisModel: analysisModel || '',
     orgId: orgId || '',
   };
 
@@ -171,13 +173,13 @@ export function saveAiConfig({ provider, baseUrl, apiKey, model, orgId, clearKey
  */
 export function getAiConfigStatus() {
   const p = configPath();
-  if (!p || !fs.existsSync(p)) return { configured: false, provider: '', baseUrl: '', model: '', orgId: '' };
+  if (!p || !fs.existsSync(p)) return { configured: false, provider: '', baseUrl: '', model: '', analysisModel: '', orgId: '' };
 
   let parsed;
   try {
     parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
   } catch {
-    return { configured: false, provider: '', baseUrl: '', model: '', orgId: '' };
+    return { configured: false, provider: '', baseUrl: '', model: '', analysisModel: '', orgId: '' };
   }
 
   const hasKey = Boolean(parsed.apiKey || parsed.apiKeyEncrypted);
@@ -186,6 +188,7 @@ export function getAiConfigStatus() {
     provider: parsed.provider || '',
     baseUrl: parsed.baseUrl || '',
     model: parsed.model || '',
+    analysisModel: parsed.analysisModel || '',
     orgId: parsed.orgId || '',
   };
 }

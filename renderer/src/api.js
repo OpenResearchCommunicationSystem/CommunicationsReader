@@ -63,29 +63,13 @@ export async function imageToText(attachmentId) {
   throw new Error('imageToText is only available inside the Electron app');
 }
 
-// Mirrors src/translate/translate.js's AVAILABLE_LANGS for preview mode.
-// Deliberately excludes 'ell' (Greek) -- see that module's comment on why
-// it's not shipped yet, not just omitted from this mock by oversight.
-const MOCK_AVAILABLE_TRANSLATE_LANGS = {
-  ara: 'Arabic',
-  chi_sim: 'Chinese (Simplified)',
-  rus: 'Russian',
-  tur: 'Turkish',
-  fas: 'Farsi',
-};
-
-export async function getAvailableTranslateLangs() {
-  if (hasRealApi) return window.api.getAvailableTranslateLangs();
-  return { available: MOCK_AVAILABLE_TRANSLATE_LANGS };
-}
-
-export async function translateCommunication(communicationId, sourceLang) {
-  if (hasRealApi) return window.api.translateCommunication(communicationId, sourceLang);
+export async function translateCommunication(communicationId) {
+  if (hasRealApi) return window.api.translateCommunication(communicationId);
   throw new Error('translateCommunication is only available inside the Electron app');
 }
 
-export async function translateAttachment(attachmentId, sourceLang) {
-  if (hasRealApi) return window.api.translateAttachment(attachmentId, sourceLang);
+export async function translateAttachment(attachmentId) {
+  if (hasRealApi) return window.api.translateAttachment(attachmentId);
   throw new Error('translateAttachment is only available inside the Electron app');
 }
 
@@ -104,8 +88,8 @@ export async function previewFocusSelection(communicationIds) {
   throw new Error('previewFocusSelection is only available inside the Electron app');
 }
 
-export async function translateFocusSelection(communicationIds, sourceLang) {
-  if (hasRealApi) return window.api.translateFocusSelection(communicationIds, sourceLang);
+export async function translateFocusSelection(communicationIds) {
+  if (hasRealApi) return window.api.translateFocusSelection(communicationIds);
   throw new Error('translateFocusSelection is only available inside the Electron app');
 }
 
@@ -117,6 +101,41 @@ export async function analyzeThread(threadId, communicationIds) {
 export async function getThreadSummary(threadId) {
   if (hasRealApi) return window.api.getThreadSummary(threadId);
   return null;
+}
+
+export async function analyzeFocusCollection(communicationIds) {
+  if (hasRealApi) return window.api.analyzeFocusCollection(communicationIds);
+  throw new Error('analyzeFocusCollection is only available inside the Electron app');
+}
+
+export async function getFocusCollectionSummary() {
+  if (hasRealApi) return window.api.getFocusCollectionSummary();
+  return null;
+}
+
+export async function extractFocusEntities(communicationIds) {
+  if (hasRealApi) return window.api.extractFocusEntities(communicationIds);
+  throw new Error('extractFocusEntities is only available inside the Electron app');
+}
+
+export async function getFocusEntities() {
+  if (hasRealApi) return window.api.getFocusEntities();
+  return null;
+}
+
+export async function askFocusQuestion(communicationIds, question) {
+  if (hasRealApi) return window.api.askFocusQuestion(communicationIds, question);
+  throw new Error('askFocusQuestion is only available inside the Electron app');
+}
+
+export async function getFocusQaMessages() {
+  if (hasRealApi) return window.api.getFocusQaMessages();
+  return [];
+}
+
+export async function clearFocusQaConversation() {
+  if (hasRealApi) return window.api.clearFocusQaConversation();
+  throw new Error('clearFocusQaConversation is only available inside the Electron app');
 }
 
 export async function runScan(datasetIds) {

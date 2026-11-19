@@ -40,21 +40,21 @@ function getAttachmentStatement(db) {
  * Translates a communication's bodyText into English and writes the
  * result back, same "read row, call the engine, write result, log an
  * audit event" shape as src/db/extraction-write.js's
- * updateAttachmentExtraction(), but investigator-triggered per item
- * (see src/translate/translate.js -- there's no source-language
- * auto-detection in this codebase).
+ * updateAttachmentExtraction(), but investigator-triggered per item.
+ * translatedLang is whatever the AI itself detected (see
+ * src/translate/translate.js) -- display-only, not a validated code.
  */
-export async function translateCommunication(db, communicationId, sourceLang) {
+export async function translateCommunication(db, communicationId) {
   const row = db.prepare('SELECT id, bodyText FROM communications WHERE id = ?').get(communicationId);
   if (!row) {
     throw new Error(`translateCommunication: no communication with id ${communicationId}`);
   }
 
-  const result = await translateText(row.bodyText ?? '', sourceLang);
+  const result = await translateText(row.bodyText ?? '');
   getCommStatement(db).run({
     id: communicationId,
     translatedText: result.text,
-    translatedLang: sourceLang,
+    translatedLang: result.meta.detectedLanguage || null,
     translatedAt: Date.now(),
     translationMeta: JSON.stringify(result.meta),
   });
@@ -63,7 +63,7 @@ export async function translateCommunication(db, communicationId, sourceLang) {
   appendEvent(db, {
     eventType: 'translation_run',
     subjectRef: String(communicationId),
-    payload: { target: 'communication', communicationId, sourceLang },
+    payload: { target: 'communication', communicationId, detectedLanguage: result.meta.detectedLanguage || null },
   });
 
   return result;
@@ -76,17 +76,17 @@ export async function translateCommunication(db, communicationId, sourceLang) {
  * ever translated, mirroring how export-attachment only ever hands back
  * extracted text, never original bytes.
  */
-export async function translateAttachment(db, attachmentId, sourceLang) {
+export async function translateAttachment(db, attachmentId) {
   const row = db.prepare('SELECT id, communicationId, extractedText FROM attachments WHERE id = ?').get(attachmentId);
   if (!row) {
     throw new Error(`translateAttachment: no attachment with id ${attachmentId}`);
   }
 
-  const result = await translateText(row.extractedText ?? '', sourceLang);
+  const result = await translateText(row.extractedText ?? '');
   getAttachmentStatement(db).run({
     id: attachmentId,
     translatedText: result.text,
-    translatedLang: sourceLang,
+    translatedLang: result.meta.detectedLanguage || null,
     translatedAt: Date.now(),
     translationMeta: JSON.stringify(result.meta),
   });
@@ -95,7 +95,7 @@ export async function translateAttachment(db, attachmentId, sourceLang) {
   appendEvent(db, {
     eventType: 'translation_run',
     subjectRef: String(attachmentId),
-    payload: { target: 'attachment', attachmentId, sourceLang },
+    payload: { target: 'attachment', attachmentId, detectedLanguage: result.meta.detectedLanguage || null },
   });
 
   return result;

@@ -19,13 +19,8 @@ const EXTRACTION_LABELS = {
 };
 
 // Shared by the message body and each attachment's extracted text --
-// translation is investigator-triggered per item (no language-ID model
-// exists in this codebase to guess a source language, unlike OCR's
-// automatic post-import pass). Local dropdown selection, not lifted to
-// App.jsx state, since it's ephemeral per item; ReadingPane is remounted
-// (via a `key` on communication.id in App.jsx) whenever the selected
-// message changes, so this resets naturally rather than leaking a stale
-// selection across messages.
+// translation is investigator-triggered per item, source language
+// auto-detected by the AI itself (see src/translate/translate.js).
 // translationMeta is stored as a JSON string (src/translate/translate.js's
 // meta, written verbatim by translate-record.js) -- parsed defensively
 // since it's null before the first translation and this is user-facing
@@ -89,49 +84,37 @@ function AttachmentHash({ hash }) {
   );
 }
 
-function TranslateControl({ availableTranslateLangs, translating, onTranslate, translatedText, translatedLang, translationMeta }) {
-  const codes = Object.keys(availableTranslateLangs || {});
-  const [sourceLang, setSourceLang] = useState(codes[0] || '');
-  // Lets the investigator pick a different source language after a bad
-  // result (wrong language selected, garbage output) instead of being
-  // stuck with the first attempt -- reset alongside translatedText via
-  // ReadingPane's per-communication `key` remount, same as sourceLang.
+function TranslateControl({ translating, onTranslate, translatedText, translatedLang, translationMeta }) {
+  // Lets the investigator re-run translation after a bad result instead
+  // of being stuck with the first attempt -- reset alongside
+  // translatedText via ReadingPane's per-communication `key` remount.
   const [retranslating, setRetranslating] = useState(false);
 
-  if (codes.length === 0) return null;
-
-  const showSelector = !translatedText || retranslating;
+  const showButton = !translatedText || retranslating;
   const meta = parseTranslationMeta(translationMeta);
   const sourceNumericSpans = meta?.sourceNumericSpans || [];
   const missingSpans = meta?.numericSpansMissingInTranslation || [];
 
   return (
     <div className="translate-control">
-      {showSelector && (
-        <>
-          <select value={sourceLang} onChange={(e) => setSourceLang(e.target.value)} disabled={translating}>
-            {codes.map((code) => (
-              <option key={code} value={code}>{availableTranslateLangs[code]}</option>
-            ))}
-          </select>
-          <button
-            className="translate-button"
-            disabled={translating || !sourceLang}
-            onClick={() => {
-              setRetranslating(false);
-              onTranslate(sourceLang);
-            }}
-            title="Machine translation, fully offline -- quality varies by language and is not a substitute for a human translator"
-          >
-            {translating ? 'Translating…' : 'Translate from…'}
-          </button>
-        </>
+      {showButton && (
+        <button
+          className="translate-button"
+          disabled={translating}
+          onClick={() => {
+            setRetranslating(false);
+            onTranslate();
+          }}
+          title="Machine translation via the configured AI endpoint -- source language is detected automatically"
+        >
+          {translating ? 'Translating…' : 'Translate'}
+        </button>
       )}
       {translatedText && !retranslating && (
         <div className="translated-text" dir="auto">
           <div className="translated-text-label">
-            Machine translation from {availableTranslateLangs[translatedLang] || translatedLang}:
-            <button className="retranslate-link" onClick={() => setRetranslating(true)}>Wrong language? Retranslate</button>
+            Machine translation{translatedLang ? ` from ${translatedLang}` : ''}:
+            <button className="retranslate-link" onClick={() => setRetranslating(true)}>Not right? Retranslate</button>
           </div>
           {translatedText}
           {missingSpans.length > 0 && (
@@ -178,7 +161,7 @@ export default function ReadingPane({
   communication,
   cryptoMatches,
   onExportAttachment,
-  availableTranslateLangs,
+  aiAvailable,
   onTranslateCommunication,
   onTranslateAttachment,
   translatingCommunication,
@@ -230,11 +213,10 @@ export default function ReadingPane({
         )}
       </div>
 
-      {!communication.bodyEmpty && availableTranslateLangs && onTranslateCommunication && (
+      {!communication.bodyEmpty && aiAvailable && onTranslateCommunication && (
         <TranslateControl
-          availableTranslateLangs={availableTranslateLangs}
           translating={translatingCommunication}
-          onTranslate={(sourceLang) => onTranslateCommunication(communication.id, sourceLang)}
+          onTranslate={() => onTranslateCommunication(communication.id)}
           translatedText={communication.translatedText}
           translatedLang={communication.translatedLang}
           translationMeta={communication.translationMeta}
@@ -298,11 +280,10 @@ export default function ReadingPane({
                 {att.extractionStatus === 'attempted_failed' && (
                   <div className="attachment-extraction-error">Extraction failed: {att.extractionError}</div>
                 )}
-                {att.extractionStatus === 'attempted_succeeded' && att.extractedText && availableTranslateLangs && onTranslateAttachment && (
+                {att.extractionStatus === 'attempted_succeeded' && att.extractedText && aiAvailable && onTranslateAttachment && (
                   <TranslateControl
-                    availableTranslateLangs={availableTranslateLangs}
                     translating={translatingAttachmentId === att.id}
-                    onTranslate={(sourceLang) => onTranslateAttachment(att.id, sourceLang)}
+                    onTranslate={() => onTranslateAttachment(att.id)}
                     translatedText={att.translatedText}
                     translatedLang={att.translatedLang}
                     translationMeta={att.translationMeta}

@@ -42,13 +42,11 @@ function FocusItemStatus({ item }) {
 
 function BatchProcessingControls({
   focusSet,
-  availableTranslateLangs,
+  aiAvailable,
   batchSelection,
   onToggleBatchSelection,
   onSelectAllInFocus,
   onSelectNoneInFocus,
-  batchSourceLang,
-  onBatchSourceLangChange,
   batchPreview,
   onPreviewBatch,
   onConfirmBatch,
@@ -56,8 +54,7 @@ function BatchProcessingControls({
   batchProcessing,
   batchResult,
 }) {
-  const codes = Object.keys(availableTranslateLangs || {});
-  if (codes.length === 0 || focusSet.length === 0) return null;
+  if (!aiAvailable || focusSet.length === 0) return null;
 
   const selectedCount = batchSelection.size;
 
@@ -71,11 +68,6 @@ function BatchProcessingControls({
         </span>
       </div>
       <div className="batch-processing-row">
-        <select value={batchSourceLang} onChange={(e) => onBatchSourceLangChange(e.target.value)} disabled={batchProcessing}>
-          {codes.map((code) => (
-            <option key={code} value={code}>{availableTranslateLangs[code]}</option>
-          ))}
-        </select>
         <button
           type="button"
           className="batch-preview-button"
@@ -152,13 +144,12 @@ export default function FocusPanel({
   onExportText,
   exportingText,
   exportTextStatus,
-  availableTranslateLangs,
+  aiAvailable,
+  onOpenCollectionAnalysis,
   batchSelection,
   onToggleBatchSelection,
   onSelectAllInFocus,
   onSelectNoneInFocus,
-  batchSourceLang,
-  onBatchSourceLangChange,
   batchPreview,
   onPreviewBatch,
   onConfirmBatch,
@@ -191,6 +182,17 @@ export default function FocusPanel({
           Clear
         </button>
       </div>
+      {aiAvailable && (
+        <div className="focus-actions" title="Summarize the whole Focus Set, extract named entities, or ask follow-up questions about it via the configured AI endpoint">
+          <button
+            className="focus-analyze-collection-button"
+            onClick={onOpenCollectionAnalysis}
+            disabled={focusSet.length === 0}
+          >
+            Analyze Collection&hellip;
+          </button>
+        </div>
+      )}
       {materializeStatus && (
         <div className={`focus-materialize-status ${materializeStatus.error ? 'error' : 'success'}`}>
           {materializeStatus.error
@@ -223,13 +225,11 @@ export default function FocusPanel({
       )}
       <BatchProcessingControls
         focusSet={focusSet}
-        availableTranslateLangs={availableTranslateLangs}
+        aiAvailable={aiAvailable}
         batchSelection={batchSelection}
         onToggleBatchSelection={onToggleBatchSelection}
         onSelectAllInFocus={onSelectAllInFocus}
         onSelectNoneInFocus={onSelectNoneInFocus}
-        batchSourceLang={batchSourceLang}
-        onBatchSourceLangChange={onBatchSourceLangChange}
         batchPreview={batchPreview}
         onPreviewBatch={onPreviewBatch}
         onConfirmBatch={onConfirmBatch}

@@ -51,20 +51,32 @@ export async function ocrImage(config, imageBuffer, mimeType) {
   return text.trim();
 }
 
+// Parses the "Detected language: <name>\n\n<translation>" format requested
+// by translateChunk's prompt below. Falls back to treating the whole
+// response as the translation with no detected language if the model
+// didn't follow the format exactly -- a malformed header is not worth
+// failing the whole translation over.
+function parseTranslationResponse(raw) {
+  const match = raw.match(/^\s*Detected language:\s*(.+?)\s*\n+([\s\S]*)$/i);
+  if (!match) return { text: raw.trim(), detectedLanguage: null };
+  return { text: match[2].trim(), detectedLanguage: match[1].trim() };
+}
+
 /**
- * Translates text into English via a plain chat completion. langName is
- * a human-readable language name (e.g. "Farsi"), not a code -- the model
- * doesn't need a strict code, and a plain-language instruction is more
- * robust across different providers/models than relying on one.
+ * Translates text into English via a plain chat completion, asking the
+ * model to identify the source language itself rather than requiring the
+ * investigator to pick one beforehand -- a modern general-purpose model
+ * auto-detects language reliably, unlike the small per-language models
+ * this app used before the 2026-11 AI-API switch.
  */
-export async function translateChunk(config, text, langName) {
-  const translated = await chatCompletion(config, [
+export async function translateChunk(config, text) {
+  const raw = await chatCompletion(config, [
     {
       role: 'user',
-      content: `Translate the following ${langName} text into English. Output only the translation, with no commentary or preamble, preserving all numbers, reference codes, and proper nouns exactly as they appear:\n\n${text}`,
+      content: `Identify the source language of the following text, then translate it into English. Respond in exactly this format: the first line "Detected language: <language name>", then a blank line, then only the translation with no commentary or preamble, preserving all numbers, reference codes, and proper nouns exactly as they appear. If the text is already in English, the detected language is "English" and the translation is the text unchanged.\n\n${text}`,
     },
   ]);
-  return translated.trim();
+  return parseTranslationResponse(raw);
 }
 
 /**
@@ -83,4 +95,39 @@ export async function summarizeThread(config, text) {
     },
   ]);
   return summary.trim();
+}
+
+/**
+ * Extracts named entities from an already-assembled collection transcript
+ * (see src/forensics/entity-extraction.js) as raw text expected to be a
+ * JSON array -- parsing/validating that JSON is the caller's job, not
+ * this provider's, same "providers return raw text, callers interpret
+ * it" split translate.js/summarize-thread.js already follow.
+ */
+export async function extractEntities(config, text) {
+  const raw = await chatCompletion(config, [
+    {
+      role: 'user',
+      content: `Extract named entities from the following communications text for an investigative/forensic review. Return ONLY a JSON array (no markdown code fences, no commentary) where each element is {"type": "person" | "organization" | "location" | "date" | "amount" | "account_or_reference" | "other", "value": "...", "context": "..."} -- "context" is a short (under 120 characters) snippet showing where the entity appeared. Return [] if there are none.\n\n${text}`,
+    },
+  ]);
+  return raw.trim();
+}
+
+/**
+ * Answers a follow-up question about an already-assembled collection
+ * transcript, given the running conversation so far (see
+ * src/forensics/qa-chat.js) -- the transcript is injected as a system
+ * message so it isn't repeated in every user turn, and `messages` (an
+ * array of {role: 'user'|'assistant', content}) is passed straight
+ * through to the chat-completions call since that's already this
+ * format's native multi-turn shape.
+ */
+export async function askQuestion(config, contextText, messages) {
+  const systemPrompt = {
+    role: 'system',
+    content: `You are assisting an investigator with deep analysis of a curated set of communications for an e-discovery/investigative research task. Answer only from the material below; if the answer isn't in it, say so plainly rather than guessing. This is a triage aid, not an evidentiary finding -- flag uncertainty rather than overstating confidence.\n\n${contextText}`,
+  };
+  const answer = await chatCompletion(config, [systemPrompt, ...messages]);
+  return answer.trim();
 }

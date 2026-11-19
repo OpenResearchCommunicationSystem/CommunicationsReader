@@ -43,9 +43,8 @@ function groupByContentHash(rows) {
  * processing" action) -- never re-translates anything that already has a
  * translatedAt timestamp, so re-running the same selection (or a
  * selection that overlaps a previous one) never double-taps the AI
- * endpoint or burns tokens redoing work. One sourceLang applies to the
- * whole batch; this app has no source-language auto-detection, same
- * constraint as the single-item translate actions this wraps.
+ * endpoint or burns tokens redoing work. Source language is detected by
+ * the AI per item (see src/translate/translate.js), not picked upfront.
  *
  * Attachments are additionally deduped by contentHash (confirmed
  * necessary directly: the same attachment commonly appears across
@@ -65,7 +64,7 @@ function groupByContentHash(rows) {
  * Returns { bodiesTranslated, bodiesSkipped, attachmentsTranslated,
  * attachmentsSkipped, attachmentsDeduped, errors: [{ type, id, message }] }.
  */
-export async function translateFocusSelection(db, communicationIds, sourceLang) {
+export async function translateFocusSelection(db, communicationIds) {
   const result = {
     bodiesTranslated: 0,
     bodiesSkipped: 0,
@@ -84,7 +83,7 @@ export async function translateFocusSelection(db, communicationIds, sourceLang) 
       result.bodiesSkipped++;
     } else {
       try {
-        await translateCommunication(db, communicationId, sourceLang);
+        await translateCommunication(db, communicationId);
         result.bodiesTranslated++;
       } catch (err) {
         result.errors.push({ type: 'communication', id: communicationId, message: err.message });
@@ -109,7 +108,7 @@ export async function translateFocusSelection(db, communicationIds, sourceLang) 
     } else {
       const representative = group[0];
       try {
-        await translateAttachment(db, representative.id, sourceLang);
+        await translateAttachment(db, representative.id);
         result.attachmentsTranslated++;
       } catch (err) {
         result.errors.push({ type: 'attachment', id: representative.id, message: err.message });

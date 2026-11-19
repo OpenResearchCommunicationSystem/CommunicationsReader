@@ -19,11 +19,13 @@ import { importArchive } from '../src/parser/index.js';
 import { runExtraction } from '../src/extract/run-extraction.js';
 import { imageToText } from '../src/extract/attachment-image-to-text.js';
 import { purgeAttachmentOriginals } from '../src/db/purge-attachment-originals.js';
-import { AVAILABLE_LANGS as AVAILABLE_TRANSLATE_LANGS } from '../src/translate/translate.js';
 import { translateCommunication, translateAttachment } from '../src/translate/translate-record.js';
 import { translateFocusSelection, previewFocusSelection } from '../src/translate/translate-batch.js';
 import { analyzeThread, getThreadSummary } from '../src/threading/summarize-thread.js';
 import { getAiConfigStatus, saveAiConfig } from '../src/ai-assist/config.js';
+import { FOCUS_SET_SCOPE } from '../src/forensics/scope.js';
+import { extractEntitiesForScope, getEntityExtraction } from '../src/forensics/entity-extraction.js';
+import { listQaMessages, clearQaConversation, askFollowUpQuestion } from '../src/forensics/qa-chat.js';
 import { runScan } from '../src/crypto-detect/run-scan.js';
 import { runSearch } from '../src/search/run-search.js';
 import { hashFileStreaming } from '../src/parser/hash.js';
@@ -332,18 +334,15 @@ function registerIpcHandlers() {
   // no longer reachable from the renderer at all.
   ipcMain.handle('image-to-text', (_event, attachmentId) => imageToText(db, attachmentId));
 
-  ipcMain.handle('get-available-translate-langs', () => ({ available: AVAILABLE_TRANSLATE_LANGS }));
-
-  // On-demand only, one item at a time -- unlike OCR, translation has no
-  // way to auto-detect a source language (no language-ID model exists in
-  // this codebase), so it can never run automatically at import time; the
-  // investigator picks a language explicitly per message/attachment (see
-  // src/translate/translate-record.js).
-  ipcMain.handle('translate-communication', (_event, { communicationId, sourceLang }) =>
-    translateCommunication(db, communicationId, sourceLang)
+  // On-demand only, one item at a time. The source language is no longer
+  // picked by the investigator beforehand -- the AI detects it itself
+  // (see src/translate/translate.js) -- so there's nothing for the
+  // renderer to fetch a language list for.
+  ipcMain.handle('translate-communication', (_event, { communicationId }) =>
+    translateCommunication(db, communicationId)
   );
-  ipcMain.handle('translate-attachment', (_event, { attachmentId, sourceLang }) =>
-    translateAttachment(db, attachmentId, sourceLang)
+  ipcMain.handle('translate-attachment', (_event, { attachmentId }) =>
+    translateAttachment(db, attachmentId)
   );
 
   // Focus Set batch processing: hand-select communications, see an exact
@@ -353,8 +352,8 @@ function registerIpcHandlers() {
   // selection later never re-translates anything, so there's no double
   // paying for the same item. See src/translate/translate-batch.js.
   ipcMain.handle('preview-focus-selection', (_event, communicationIds) => previewFocusSelection(db, communicationIds));
-  ipcMain.handle('translate-focus-selection', (_event, { communicationIds, sourceLang }) =>
-    translateFocusSelection(db, communicationIds, sourceLang)
+  ipcMain.handle('translate-focus-selection', (_event, communicationIds) =>
+    translateFocusSelection(db, communicationIds)
   );
 
   // Analyze Thread: on-demand, one thread at a time, same "no preview
@@ -367,6 +366,32 @@ function registerIpcHandlers() {
     analyzeThread(db, threadId, communicationIds)
   );
   ipcMain.handle('get-thread-summary', (_event, threadId) => getThreadSummary(db, threadId));
+
+  // Analyze Collection: the Focus Set's counterpart to Analyze Thread
+  // above -- same analyzeThread()/getThreadSummary() functions, just
+  // keyed by the fixed FOCUS_SET_SCOPE string instead of a real thread
+  // hash (see src/forensics/scope.js and thread_summaries' own schema
+  // comment for why that's a safe reuse, not a hack).
+  ipcMain.handle('analyze-focus-collection', (_event, communicationIds) =>
+    analyzeThread(db, FOCUS_SET_SCOPE, communicationIds)
+  );
+  ipcMain.handle('get-focus-collection-summary', () => getThreadSummary(db, FOCUS_SET_SCOPE));
+
+  // Entity extraction and follow-up Q&A, both scoped to the Focus Set
+  // only for now (see src/forensics/). Same reasoning as Analyze
+  // Thread/Collection above for why no preview step: a single explicit
+  // click, not a bulk action, and the investigator already sees exactly
+  // what's in the Focus Set before clicking.
+  ipcMain.handle('extract-focus-entities', (_event, communicationIds) =>
+    extractEntitiesForScope(db, FOCUS_SET_SCOPE, communicationIds)
+  );
+  ipcMain.handle('get-focus-entities', () => getEntityExtraction(db, FOCUS_SET_SCOPE));
+
+  ipcMain.handle('ask-focus-question', (_event, { communicationIds, question }) =>
+    askFollowUpQuestion(db, FOCUS_SET_SCOPE, communicationIds, question)
+  );
+  ipcMain.handle('get-focus-qa-messages', () => listQaMessages(db, FOCUS_SET_SCOPE));
+  ipcMain.handle('clear-focus-qa-conversation', () => clearQaConversation(db, FOCUS_SET_SCOPE));
 
   // AI Settings UI: a form-based alternative to hand-editing ai-config.json.
   // get-ai-config-status never returns the key itself, encrypted or not --

@@ -54,7 +54,7 @@ test('translateFocusSelection processes everything pending and skips everything 
   insertAttachment(db, noTextComm, null); // not_attempted -- nothing to translate
 
   callCount = 0;
-  const result = await translateFocusSelection(db, [freshComm, alreadyDoneComm, noTextComm], 'rus');
+  const result = await translateFocusSelection(db, [freshComm, alreadyDoneComm, noTextComm]);
 
   assert.equal(result.bodiesTranslated, 2, 'freshComm and noTextComm both had untranslated bodies');
   assert.equal(result.bodiesSkipped, 1, 'alreadyDoneComm was already translated');
@@ -65,7 +65,7 @@ test('translateFocusSelection processes everything pending and skips everything 
 
   // Re-running the exact same selection must not double-tap anything now.
   callCount = 0;
-  const secondRun = await translateFocusSelection(db, [freshComm, alreadyDoneComm, noTextComm], 'rus');
+  const secondRun = await translateFocusSelection(db, [freshComm, alreadyDoneComm, noTextComm]);
   assert.equal(secondRun.bodiesTranslated, 0);
   assert.equal(secondRun.bodiesSkipped, 3);
   assert.equal(callCount, 0, 'nothing left pending -- a second run against the same selection makes zero AI calls');
@@ -104,7 +104,7 @@ test('translateFocusSelection deduplicates attachments by contentHash, calling t
   const attD = insertAttachment(db, commD, 'a totally different file', 'different-hash-xyz');
 
   callCount = 0;
-  const result = await translateFocusSelection(db, [commA, commB, commC, commD], 'fas');
+  const result = await translateFocusSelection(db, [commA, commB, commC, commD]);
 
   assert.equal(result.attachmentsTranslated, 2, 'one real translation per unique contentHash group (ledger + the different doc)');
   assert.equal(result.attachmentsDeduped, 2, 'the other 2 ledger copies were filled in for free');
