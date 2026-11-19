@@ -30,13 +30,41 @@ jobs:
   build-and-release:
     runs-on: windows-latest
     steps:
+      # Checks out the branch the release was cut from (not the release's
+      # own tag/commit) so the build-number bump below has a real branch
+      # to commit onto. In this project's actual usage (cut a release
+      # right after merging to master) that's the same commit the tag
+      # points at anyway; target_commitish is empty for a manual
+      # workflow_dispatch run, where an empty ref just means "use
+      # whatever ref was picked to run this workflow from".
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.target_commitish }}
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
       - run: npm run package
+      # scripts/bump-build-number.mjs (run as part of `npm run package`
+      # above) only writes the bumped number to the on-disk package.json
+      # -- its own comment says to commit that alongside the release, but
+      # nothing did that for a CI-triggered release, so every run started
+      # from the same last-committed number and produced an identically
+      # named/versioned exe regardless of which commit it was actually
+      # built from. Committing it back here is what makes the number (and
+      # therefore the artifact filename) actually advance release over
+      # release, same as the local/manual packaging flow this script was
+      # designed for. [skip ci] avoids an otherwise-pointless extra
+      # test+build run of ci.yml for a change that's just this one number.
+      - name: Commit the bumped build number back to the branch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git diff --cached --quiet && echo "Nothing to commit" || git commit -m "Bump build number to $(node -p "require('./package.json').buildNumber") [skip ci]"
+          git push
       - uses: softprops/action-gh-release@v2
         with:
           files: release/*.exe
