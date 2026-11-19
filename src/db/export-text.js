@@ -84,8 +84,8 @@ function formatMessage(comm, index, markup) {
     lines.push('');
     lines.push(
       markup
-        ? `**Machine translation (from ${comm.translatedLang || 'unknown source language'}):**`
-        : `Machine translation (from ${comm.translatedLang || 'unknown source language'}):`
+        ? `**LLM translation (from ${comm.translatedLang || 'unknown source language'}):**`
+        : `LLM translation (from ${comm.translatedLang || 'unknown source language'}):`
     );
     lines.push(comm.translatedText);
   }

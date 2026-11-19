@@ -105,7 +105,7 @@ function TranslateControl({ translating, onTranslate, translatedText, translated
             setRetranslating(false);
             onTranslate();
           }}
-          title="Machine translation via the configured AI endpoint -- source language is detected automatically"
+          title="LLM translation via the configured AI endpoint -- source language is detected automatically"
         >
           {translating ? 'Translating…' : 'Translate'}
         </button>
@@ -113,13 +113,13 @@ function TranslateControl({ translating, onTranslate, translatedText, translated
       {translatedText && !retranslating && (
         <div className="translated-text" dir="auto">
           <div className="translated-text-label">
-            Machine translation{translatedLang ? ` from ${translatedLang}` : ''}:
+            LLM translation{translatedLang ? ` from ${translatedLang}` : ''}:
             <button className="retranslate-link" onClick={() => setRetranslating(true)}>Not right? Retranslate</button>
           </div>
           {translatedText}
           {missingSpans.length > 0 && (
             <div className="numeric-spans-warning">
-              <strong>⚠ Numbers/codes not confirmed in translation:</strong> machine translation is unreliable with
+              <strong>⚠ Numbers/codes not confirmed in translation:</strong> LLM translation is unreliable with
               figures -- these appeared in the original but not verbatim in the translation above, so treat them (and
               any other numbers here) as unverified until checked against the original text: {missingSpans.join(', ')}
             </div>
